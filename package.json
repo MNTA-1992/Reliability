@@ -1,0 +1,12 @@
+{
+  "name": "vhms-dashboard",
+  "version": "1.0.0",
+  "description": "VHMS Predictive Maintenance Dashboard - Komatsu (PC/HD/Dozer)",
+  "private": true,
+  "scripts": {
+    "start": "node serve.js",
+    "generate": "node generate-sample-fleet.js",
+    "generate:d375": "node generate-d375-sample.js"
+  },
+  "license": "UNLICENSED"
+}
