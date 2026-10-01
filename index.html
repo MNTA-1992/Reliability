@@ -1,0 +1,1498 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Reliability-Based Maintenance || OMS-SOS Lab </title>
+
+  <!-- Chart.js (lokal, offline-ready) -->
+  <script src="vendor/chart.umd.min.js"></script>
+  <!-- Font Awesome (lokal, offline-ready) -->
+  <link rel="stylesheet" href="vendor/fontawesome/css/all.min.css">
+  <!-- Google Fonts (opsional; ada fallback font sistem bila offline) -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;600;700&display=swap" rel="stylesheet">
+
+  <!-- Stylesheet aplikasi (versi query = cache-busting agar perubahan CSS
+       selalu terambil; naikkan angka saat mengubah CSS agar tak kena cache) -->
+  <link rel="stylesheet" href="css/vhms-dashboard.css?v=20260930">
+  <link rel="stylesheet" href="css/portfolio.css?v=20261001q">
+  <link rel="stylesheet" href="css/portfolio-formal.css?v=20261001q">
+  <style>
+    /* Gaya khusus cetak laporan */
+    @media print {
+      .app-header .header-right .btn,
+      .toolbar, .dropzone, .table-toolbar .btn { display: none !important; }
+      body { background: #fff; color: #000; }
+      .panel, .kpi-card { break-inside: avoid; }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- ==================== HEADER ==================== -->
+  <header class="app-header">
+    <div class="header-left">
+      <div>
+        <div class="header-title">
+          <h1><span id="machine-brand">Reliability Based Maintenance || OMS-SOS Lab</span><span id="machine-model" style="display:none"></span></h1>
+          <span class="chip" id="machine-family" style="display:none">—</span>
+          <span class="chip" id="machine-sn">SN: —</span>
+          <span class="chip" id="machine-lambung" style="display:none">Lambung: —</span>
+          <span class="chip online"><span class="dot"></span> ONLINE</span>
+        </div>
+        <p class="header-sub" id="machine-engine">Engine: —</p>
+      </div>
+    </div>
+
+    <div class="header-right">
+      <div class="header-stat">
+        <p class="k" id="header-smr-label">Service Meter Reading</p>
+        <p class="v" id="header-smr">—</p>
+      </div>
+      <div class="vsep"></div>
+      <div class="header-stat">
+        <p class="k" id="header-health-label">Health Index</p>
+        <p class="v" id="header-health">—</p>
+      </div>
+      <div class="vsep"></div>
+      <div class="header-stat">
+        <p class="k" id="header-rul-label">Remaining Useful Life (RUL)</p>
+        <p class="v mono" id="header-rul" style="font-size:13px">—</p>
+      </div>
+      <div class="vsep"></div>
+      <div class="header-stat" style="display:none" id="header-time-wrap">
+        <p class="k">Last Data Telemetri</p>
+        <p class="v mono" id="header-time" style="font-size:12px;color:#e2e8f0">—</p>
+      </div>
+      <button class="btn btn-ghost" id="btn-fleet" title="Kembali ke halaman utama">
+        <i class="fa-solid fa-house"></i> <span class="hide-sm">Home</span>
+      </button>
+      <button class="btn btn-ghost" id="btn-cross" title="Analisa silang VHMS x SOS (telemetri x oli)" style="border:1px solid #22d3ee;color:#22d3ee">
+        <i class="fa-solid fa-diagram-project"></i> <span class="hide-sm">Cross Analysis</span>
+      </button>
+      <button class="btn btn-ghost" id="btn-switch-sos" title="Buka SOS Oil Analysis Dashboard" style="border:1px solid #f59e0b;color:#f59e0b">
+        <i class="fa-solid fa-flask"></i> <span class="hide-sm">SOS Lab</span>
+      </button>
+      <button class="btn btn-ghost" id="btn-portfolio" title="Portofolio Reliability (Critical/Warning) — konteks lifetime &amp; top-up oil" style="border:1px solid #a78bfa;color:#a78bfa">
+        <i class="fa-solid fa-clipboard-list"></i> <span class="hide-sm">Portofolio</span>
+      </button>
+      <button class="btn btn-ghost" id="btn-settings" title="Pengaturan: Tema &amp; Threshold">
+        <i class="fa-solid fa-gear"></i> <span class="hide-sm">Pengaturan</span>
+      </button>
+      <button class="btn btn-primary" id="btn-report-1">
+        <i class="fa-solid fa-file-arrow-down"></i> Cetak / Ekspor Laporan
+      </button>
+    </div>
+  </header>
+
+  <!-- ==================== BANNER ALERT ==================== -->
+  <!-- Hanya ditampilkan di halaman Dashboard Unit (diatur vhms-app.js). -->
+  <div class="alert-banner hidden" id="alert-banner"></div>
+
+  <!-- ==================== KONTEN UTAMA ==================== -->
+  <main class="app-main">
+
+    <!-- ============ AREA SAMBUTAN (UPLOAD) ============ -->
+    <section id="welcome-area">
+      <div class="panel" style="padding:0;border:none;background:transparent;box-shadow:none">
+        <div class="dropzone" id="dropzone">
+          <div class="dz-icon"><i class="fa-solid fa-truck-monster"></i></div>
+          <h3>Muat Data Telemetri VHMS</h3>
+          <p>Tarik &amp; lepas <strong>satu atau banyak file</strong> <strong>.csv / .txt</strong> ke sini, atau pilih manual.</p>
+          <div style="display:flex;gap:10px;justify-content:center;flex-wrap:wrap">
+            <button class="btn btn-primary" id="btn-pick"><i class="fa-solid fa-folder-open"></i> Pilih File CSV (bisa banyak)</button>
+          </div>
+          <input type="file" id="file-input" accept=".csv,.txt" multiple class="hidden">
+          <p style="margin-top:18px;font-size:11px;color:#475569">
+            Format didukung: export <em>Trend Analysis</em> dari VHMS Komatsu (blok <code>[Common Header]</code> &amp; <code>[Data]</code>).
+            Identitas unit diambil otomatis dari <strong>Machine Serial No.</strong> &amp; <strong>Model</strong>.
+            File diproses sepenuhnya di browser — tidak ada data yang diunggah ke server.
+          </p>
+        </div>
+      </div>
+    </section>
+    <!-- ============ AREA KATALOG UNIT (FLEET OVERVIEW / HOME) ============ -->
+    <div id="fleet-area" class="hidden" style="display:flex;flex-direction:column;gap:20px">
+      <!-- [REVISI #7] Wrap daftar/katalog agar bisa disembunyikan saat Heatmap
+           dibuka (perilaku "sub-view" seperti mode SOS). -->
+      <div id="fleet-list-wrap" style="display:flex;flex-direction:column;gap:20px">
+      <div class="toolbar">
+        <div>
+          <h2 class="panel-title" style="font-size:17px"><i class="fa-solid fa-warehouse" style="color:#0ea5e9"></i> Machine Overview — Health Monitoring</h2>
+          <p class="panel-sub">Summary Condition Monitoring Data Health Machine</p>
+        </div>
+        <div class="toolbar-right" style="gap:10px">
+          <button class="btn btn-ghost" id="btn-export-fleet"><i class="fa-solid fa-file-csv"></i> Ekspor Katalog</button>
+          <button class="btn btn-ghost" id="btn-clear-fleet"><i class="fa-solid fa-trash"></i> Kosongkan</button>
+          <button class="btn btn-ghost" id="btn-heatmap"><i class="fa-solid fa-grip"></i> Heatmap</button>
+          <button class="btn btn-cyan" id="btn-comparison"><i class="fa-solid fa-ranking-star"></i> Comparison Data</button>
+          <button class="btn btn-primary" id="btn-pick-fleet"><i class="fa-solid fa-plus"></i> Tambah VHMS</button>
+        </div>
+      </div>
+
+      <!-- Kartu statistik unit -->
+      <div class="kpi-grid" id="fleet-status-cards"></div>
+
+      <!-- Distribusi model -->
+      <div class="panel" style="padding:14px 18px">
+        <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+          <span style="font-size:11px;text-transform:uppercase;letter-spacing:.8px;color:#64748b;font-weight:600">Deteksi Model</span>
+          <div id="fleet-models" style="display:flex;gap:8px;flex-wrap:wrap"></div>
+        </div>
+      </div>
+
+      <!-- Tabel katalog unit -->
+      <div class="panel">
+        <div class="table-toolbar">
+          <div>
+            <h2 class="panel-title"><i class="fa-solid fa-list-check" style="color:#0ea5e9"></i> Daftar Unit</h2>
+            <p class="panel-sub" id="fleet-table-count">—</p>
+          </div>
+          <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
+            <input type="search" id="fleet-search" placeholder="Cari serial / model / file..." style="width:230px">
+            <select id="fleet-filter">
+              <option value="ALL">Status</option>
+              <option value="CRITICAL">Critical</option>
+              <option value="WARNING">Caution</option>
+              <option value="NORMAL">Normal</option>
+            </select>
+          </div>
+        </div>
+
+        <!-- [POIN 5] Indikator filter aktif + filter cepat per status -->
+        <div id="fleet-filter-bar" style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:0 4px 12px">
+          <span style="font-size:11px;text-transform:uppercase;letter-spacing:.8px;color:#64748b;font-weight:600">
+            <i class="fa-solid fa-filter"></i> Filter Cepat:
+          </span>
+          <button class="filter-chip" data-quick-filter="ALL"><i class="fa-solid fa-layer-group"></i> Semua <span class="fc-count" data-count="ALL">0</span></button>
+          <button class="filter-chip is-critical" data-quick-filter="CRITICAL"><i class="fa-solid fa-triangle-exclamation"></i> Critical <span class="fc-count" data-count="CRITICAL">0</span></button>
+          <button class="filter-chip is-warning" data-quick-filter="WARNING"><i class="fa-solid fa-circle-exclamation"></i> Caution <span class="fc-count" data-count="WARNING">0</span></button>
+          <button class="filter-chip is-normal" data-quick-filter="NORMAL"><i class="fa-solid fa-circle-check"></i> Normal <span class="fc-count" data-count="NORMAL">0</span></button>
+          <span id="fleet-active-filter" class="active-filter-tag hidden"></span>
+          <button class="btn btn-ghost btn-sm hidden" id="btn-reset-filter" style="margin-left:auto"><i class="fa-solid fa-xmark"></i> Reset Filter</button>
+        </div>
+
+        <div class="table-scroll">
+          <table class="data">
+            <thead id="fleet-table-head">
+              <tr>
+                <th class="center" data-fleet-sort="severity" title="Rangking — makin kecil = makin critical (skor criticality window)">Rangking</th>
+                <th data-fleet-sort="lambung">No. Lambung</th>
+                <th data-fleet-sort="model">Model</th>
+                <th class="center" data-fleet-sort="healthLabel">Status Health</th>
+                <th class="center" data-fleet-sort="smrLast">SMR Terakhir</th>
+                <th class="center" data-fleet-sort="blowbyMax">Blowby Press Max (kPa)</th>
+                <th class="center" data-fleet-sort="oilPressHMin">Engine Oil Press H-Min (MPa)</th>
+                <th class="center" data-fleet-sort="engOilTempMax">Engine Oil Temp Max (&deg;C)</th>
+                <th class="center" data-fleet-sort="coolantMax">Coolant Temp Max (&deg;C)</th>
+                <th class="center" data-fleet-sort="hydTempMax">Hyd Temp Max</th>
+                <th class="center">Anomali</th>
+                <th>Perhatian Utama</th>
+                <th class="center">Sisa Operasi</th>
+                <th class="center">Aksi</th>
+              </tr>
+            </thead>
+            <tbody id="fleet-table-body"></tbody>
+          </table>
+        </div>
+        <p style="margin-top:10px;font-size:10.5px;color:#475569">
+          Klik judul kolom untuk mengurutkan. Klik <strong>Detail</strong> untuk membuka dashboard unit tersebut.
+        </p>
+      </div>
+      </div><!-- /#fleet-list-wrap -->
+
+      <!-- Home Heatmap Panel (toggle) -->
+      <div id="fleet-heatmap-panel" class="panel hidden">
+        <div class="panel-head">
+          <div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap">
+            <button class="btn btn-ghost" id="btn-heatmap-close"><i class="fa-solid fa-arrow-left"></i> Kembali</button>
+            <div>
+              <h2 class="panel-title"><i class="fa-solid fa-grip" style="color:#f59e0b"></i> Unit Heatmap — Severity Matrix</h2>
+              <p class="panel-sub">Baris = unit, kolom = parameter, warna = tingkat keparahan</p>
+            </div>
+          </div>
+        </div>
+        <div class="table-scroll" style="max-height:600px">
+          <table class="data heatmap-table" id="heatmap-table">
+            <thead id="heatmap-head"></thead>
+            <tbody id="heatmap-body"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- ============ AREA PERBANDINGAN UNIT (UNIT COMPARISON) ============ -->
+    <div id="comparison-area" class="hidden" style="display:flex;flex-direction:column;gap:20px">
+      <div class="toolbar">
+        <div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap">
+          <button class="btn btn-ghost" id="btn-back-fleet-2"><i class="fa-solid fa-arrow-left"></i> Kembali ke Home</button>
+          <div>
+            <h2 class="panel-title" style="font-size:17px"><i class="fa-solid fa-ranking-star" style="color:#06b6d4"></i> Unit Comparison</h2>
+            <p class="panel-sub" id="comparison-subtitle">Peringkat criticalitas Home — skor 0–100 (Keparahan 45% + Bukti 30% + Tren 25%)</p>
+          </div>
+        </div>
+        <div class="toolbar-right" style="gap:10px">
+          <button class="btn btn-ghost" id="btn-export-comparison"><i class="fa-solid fa-file-csv"></i> <span id="btn-export-comparison-label">Ekspor Peringkat</span></button>
+        </div>
+      </div>
+
+      <!-- Sub-navigasi: Peringkat | Per Parameter | Overlay -->
+      <div class="subtab-bar" id="comparison-subtabs">
+        <button class="subtab-btn active" data-comp-tab="rank">
+          <i class="fa-solid fa-ranking-star"></i> Peringkat Criticalitas
+        </button>
+        <button class="subtab-btn" data-comp-tab="param">
+          <i class="fa-solid fa-table-columns"></i> Perbandingan per Parameter
+        </button>
+        <button class="subtab-btn" data-comp-tab="overlay">
+          <i class="fa-solid fa-chart-line"></i> Overlay Unit vs Unit
+        </button>
+      </div>
+
+      <!-- ===== SUB-PAGE 1: PERINGKAT ===== -->
+      <div id="comparison-tab-rank" style="display:flex;flex-direction:column;gap:20px">
+
+      <!-- Kartu ringkasan -->
+      <div class="kpi-grid" id="comparison-cards"></div>
+
+      <!-- Top 10 + chart pilar -->
+      <div class="content-grid align-stretch">
+        <div class="panel">
+          <div class="panel-head">
+            <div>
+              <h2 class="panel-title"><i class="fa-solid fa-trophy" style="color:#fbbf24"></i> Top 10 Unit Paling Critical</h2>
+              <p class="panel-sub">Prioritas tindakan pemeliharaan tertinggi</p>
+            </div>
+          </div>
+          <div id="comparison-top10"></div>
+        </div>
+        <div class="panel panel-fill">
+          <div class="panel-head">
+            <div>
+              <h2 class="panel-title"><i class="fa-solid fa-chart-pie" style="color:#f59e0b"></i> Distribusi Pilar Penyebab</h2>
+              <p class="panel-sub">Pada 20 unit teratas</p>
+            </div>
+          </div>
+          <div class="chart-wrap chart-fill"><canvas id="comparison-pillar-chart"></canvas></div>
+        </div>
+      </div>
+
+      <!-- Tabel peringkat lengkap -->
+      <div class="panel">
+        <div class="table-toolbar">
+          <div>
+            <h2 class="panel-title"><i class="fa-solid fa-table-list" style="color:#0ea5e9"></i> Peringkat Lengkap</h2>
+            <p class="panel-sub" id="comparison-count">—</p>
+          </div>
+          <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
+            <input type="search" id="comparison-search" placeholder="Cari serial / model..." style="width:200px">
+            <select id="comparison-model">
+              <option value="ALL">Semua Model</option>
+            </select>
+            <select id="comparison-band">
+              <option value="ALL">Semua Band</option>
+              <option value="CRITICAL">Critical</option>
+              <option value="WARNING">Caution</option>
+              <option value="NORMAL">Normal</option>
+            </select>
+          </div>
+        </div>
+        <div class="table-scroll">
+          <table class="data">
+            <thead id="comparison-head">
+              <tr>
+                <th class="center" data-comp-sort="rank">#</th>
+                <th data-comp-sort="serial">Serial No.</th>
+                <th data-comp-sort="model">Model</th>
+                <th class="center" data-comp-sort="band">Band</th>
+                <th class="center" data-comp-sort="score">Skor</th>
+                <th class="center" data-comp-sort="axisSeverity">Keparahan</th>
+                <th class="center" data-comp-sort="axisEvidence">Bukti</th>
+                <th class="center" data-comp-sort="axisTrend">Tren</th>
+                <th data-comp-sort="topCause">Penyebab Utama</th>
+                <th class="center">Aksi</th>
+              </tr>
+            </thead>
+            <tbody id="comparison-body"></tbody>
+          </table>
+        </div>
+        <p style="margin-top:10px;font-size:10.5px;color:#475569">
+          Skor &gt;= 45 = CRITICAL, 25–44 = WARNING, &lt; 25 = NORMAL.
+          Bobot &amp; ambang dapat disesuaikan di <code>js/vhms-config.js</code> (bagian RANKING_*).
+        </p>
+      </div>
+      </div><!-- /#comparison-tab-rank -->
+
+      <!-- ===== SUB-PAGE 2: PERBANDINGAN PER PARAMETER ===== -->
+      <div id="comparison-tab-param" class="hidden" style="display:flex;flex-direction:column;gap:20px">
+
+        <div class="panel">
+          <div class="table-toolbar">
+            <div>
+              <h2 class="panel-title"><i class="fa-solid fa-table-columns" style="color:#a78bfa"></i> Matrix Perbandingan per Parameter</h2>
+              <p class="panel-sub" id="param-comp-count">—</p>
+            </div>
+            <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
+              <select id="param-comp-pillar" title="Filter pilar/kompartemen">
+                <option value="ALL">Semua Pilar</option>
+              </select>
+              <select id="param-comp-basis" title="Kolom nilai yang dibandingkan">
+                <option value="extreme">Nilai Ekstrem (Max/Min)</option>
+                <option value="avg">Rata-rata</option>
+                <option value="last">Nilai Terakhir</option>
+              </select>
+              <button class="btn btn-ghost btn-sm" id="btn-export-param-comp"><i class="fa-solid fa-file-csv"></i> Ekspor Matrix</button>
+            </div>
+          </div>
+
+          <p style="font-size:11px;color:#64748b;margin:0 0 12px">
+            <i class="fa-solid fa-circle-info" style="color:#38bdf8"></i>
+            Membandingkan <strong>nilai mentah</strong> parameter secara aple-to-aple antar
+            <strong>Top 10 unit</strong> (peringkat criticalitas, window <span id="param-comp-window">—</span> jam terakhir).
+            Sel <span style="color:#f87171;font-weight:700">merah</span> = CRITICAL,
+            <span style="color:#fbbf24;font-weight:700">kuning</span> = WARNING,
+            <span style="color:#34d399;font-weight:700">hijau</span> = NORMAL.
+            Kolom <strong>Terbaik/Terburuk</strong> menandai unit unggul atau paling bermasalah per parameter.
+          </p>
+
+          <div class="table-scroll">
+            <table class="data param-matrix">
+              <thead id="param-comp-head"></thead>
+              <tbody id="param-comp-body"></tbody>
+            </table>
+          </div>
+        </div>
+
+      </div><!-- /#comparison-tab-param -->
+
+      <!-- ===== SUB-PAGE 3: OVERLAY UNIT VS UNIT ===== -->
+      <div id="comparison-tab-overlay" class="hidden" style="display:flex;flex-direction:column;gap:20px">
+        <div class="panel">
+          <div class="table-toolbar">
+            <div>
+              <h2 class="panel-title"><i class="fa-solid fa-chart-line" style="color:#06b6d4"></i> Overlay Unit vs Unit</h2>
+              <p class="panel-sub">Bandingkan tren parameter yang sama antar 2–5 unit (overlay di satu chart)</p>
+            </div>
+            <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
+              <select id="overlay-param" title="Pilih parameter">
+                <option value="blowbyMax">Blowby Press Max</option>
+              </select>
+              <select id="overlay-unit1" title="Unit 1"></select>
+              <select id="overlay-unit2" title="Unit 2"></select>
+              <select id="overlay-unit3" title="Unit 3 (opsional)">
+                <option value="">— Tidak ada —</option>
+              </select>
+              <select id="overlay-unit4" title="Unit 4 (opsional)">
+                <option value="">— Tidak ada —</option>
+              </select>
+              <select id="overlay-unit5" title="Unit 5 (opsional)">
+                <option value="">— Tidak ada —</option>
+              </select>
+              <button class="btn btn-primary btn-sm" id="btn-overlay-draw"><i class="fa-solid fa-play"></i> Gambar</button>
+            </div>
+          </div>
+          <div class="chart-wrap" style="min-height:350px"><canvas id="overlay-chart"></canvas></div>
+        </div>
+        <!-- Ringkasan & kesimpulan level hasil penilaian (Critical → Normal) -->
+        <div class="panel" id="overlay-summary"></div>
+      </div><!-- /#comparison-tab-overlay -->
+    </div>
+
+    <!-- ============ AREA CROSS ANALYSIS (VHMS x SOS) ============ -->
+    <div id="cross-area" class="hidden" style="display:flex;flex-direction:column;gap:20px">
+
+      <!-- Toolbar -->
+      <div class="toolbar">
+        <div>
+          <h2 class="panel-title" style="font-size:17px"><i class="fa-solid fa-diagram-project" style="color:#22d3ee"></i> Cross Analysis — VHMS × SOS</h2>
+          <p class="panel-sub">Korelasi telemetri mekanikal (VHMS) dengan kimia oli (SOS) per unit</p>
+        </div>
+        <div class="toolbar-right" style="gap:10px;align-items:center">
+          <span class="chip" id="cross-summary-chip">—</span>
+          <button class="btn btn-ghost" id="btn-cross-back"><i class="fa-solid fa-arrow-left"></i> Kembali ke Home</button>
+        </div>
+      </div>
+
+      <!-- KPI ringkas -->
+      <div class="kpi-grid" id="cross-kpi"></div>
+
+      <!-- ===== Level 1: FLEET MAP ===== -->
+      <div id="cross-fleet-panel" class="panel">
+        <div class="panel-head">
+          <div>
+            <h2 class="panel-title" style="font-size:15px"><i class="fa-solid fa-map-location-dot" style="color:#0891b2"></i> Peta Unit Terhubung</h2>
+            <p class="panel-sub" id="cross-fleet-count">—</p>
+          </div>
+          <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+            <input type="search" id="cross-search" placeholder="Cari serial / lambung / model..." style="width:220px">
+            <select id="cross-filter">
+              <option value="ALL">Semua Unit</option>
+              <option value="LINKED">Terhubung SOS</option>
+              <option value="UNLINKED">Belum ada SOS</option>
+            </select>
+          </div>
+        </div>
+        <div class="table-scroll">
+          <table class="data">
+            <thead>
+              <tr>
+                <th data-cross-sort="priority" class="center">Prioritas</th>
+                <th data-cross-sort="lambung">Unit</th>
+                <th data-cross-sort="model">Model</th>
+                <th class="center" data-cross-sort="vhmsLabel">VHMS Health</th>
+                <th class="center">SOS Tier</th>
+                <th class="center" data-cross-sort="maxR">Korelasi |r|</th>
+                <th>Hipotesis Dominan</th>
+                <th class="center">Aksi</th>
+              </tr>
+            </thead>
+            <tbody id="cross-fleet-body"></tbody>
+          </table>
+        </div>
+        <p style="margin-top:10px;font-size:10.5px;color:#475569">
+          <strong>Prioritas</strong> ditentukan STATUS KEPARAHAN (SOS Tier &amp; VHMS Health):
+          <span class="sev-badge sev-CRITICAL">P1</span> Critical (urgent) ·
+          <span class="sev-badge sev-CAUTION">P2</span> Caution ·
+          <span class="sev-badge sev-MONITOR">P3</span> Monitor ·
+          <span class="sev-badge sev-NORMAL">P4</span> Normal.
+          Kekuatan korelasi (|r|) hanya menguatkan, bukan menentukan urutan urgensi.
+          Klik <strong>Analisa</strong> untuk membuka chart korelasi detail.
+        </p>
+      </div>
+
+      <!-- ===== Level 2: DETAIL KORELASI ===== -->
+      <div id="cross-detail-panel" class="hidden" style="display:flex;flex-direction:column;gap:20px">
+        <div class="panel" id="cross-detail-header" style="padding:14px 18px"></div>
+
+        <div class="panel">
+          <div class="panel-head" style="margin-bottom:6px">
+            <div>
+              <h2 class="panel-title" style="font-size:15px"><i class="fa-solid fa-table-cells" style="color:#a78bfa"></i> Heatmap Korelasi — Parameter VHMS × SOS</h2>
+              <p class="panel-sub">Warna = koefisien korelasi Pearson (nilai ternormalisasi). Klik sel untuk buka scatter.</p>
+            </div>
+          </div>
+          <div class="table-scroll" style="max-height:520px">
+            <table class="data heatmap-table" id="cross-heatmap-table">
+              <thead id="cross-heatmap-head"></thead>
+              <tbody id="cross-heatmap-body"></tbody>
+            </table>
+          </div>
+          <div id="cross-heatmap-legend" style="margin-top:10px"></div>
+        </div>
+
+        <div class="panel">
+          <div class="panel-head">
+            <div>
+              <h2 class="panel-title" style="font-size:15px"><i class="fa-solid fa-chart-line" style="color:#22d3ee"></i> Timeline Gabungan (sumbu-X: SMR / HM)</h2>
+              <p class="panel-sub">1 garis VHMS + beberapa titik sampel SOS sepanjang SMR — melihat apakah parameter SOS bergerak bersamaan dengan VHMS</p>
+            </div>
+          </div>
+          <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-bottom:12px">
+            <label style="font-size:11px;color:#94a3b8">Pasangan (VHMS):</label>
+            <select id="cross-timeline-pair" style="min-width:280px"></select>
+            <label style="font-size:11px;color:#94a3b8">Parameter SOS (konfirmasi):</label>
+            <details class="sos-multi-select" id="cross-timeline-sos">
+              <summary><i class="fa-solid fa-flask" style="color:#f59e0b"></i> <span id="cross-timeline-sos-summary">Pilih parameter</span> <span class="sms-count" id="cross-timeline-sos-count">0</span></summary>
+              <div class="sms-panel" id="cross-timeline-sos-panel"></div>
+            </details>
+            <!-- [FITUR] Mode pencocokan sumbu VHMS<->SOS (fallback bila HM beda). -->
+            <label style="font-size:11px;color:#94a3b8" title="Acuan sumbu untuk menyelaraskan data VHMS & SOS">Mode Pencocokan:</label>
+            <select id="cross-timeline-base" style="min-width:200px" title="Pilih acuan sumbu. 'Auto (Fallback)' otomatis memakai acuan dengan titik valid terbanyak.">
+              <option value="auto">Auto (Fallback)</option>
+              <option value="hm">HM &#8596; HM (SMR)</option>
+              <option value="date">Tanggal &#8596; Tanggal</option>
+            </select>
+            <span id="cross-timeline-base-note" class="chip" style="font-size:10px"></span>
+          </div>
+          <!-- [FITUR] Diagnostik fallback: muncul bila data tidak tumpang-tindih. -->
+          <div id="cross-timeline-diagnostic" style="margin-bottom:12px"></div>
+          <div class="chart-wrap" style="min-height:380px"><canvas id="cross-timeline-chart"></canvas></div>
+          <div id="cross-timeline-legend" style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap"></div>
+          <div id="cross-timeline-r-table" style="margin-top:14px"></div>
+        </div>
+
+        <div class="grid-2" style="display:grid;grid-template-columns:1fr 1fr;gap:20px;align-items:start">
+          <div class="panel" style="display:flex;flex-direction:column;min-height:660px">
+            <div class="panel-head" style="margin-bottom:0;min-height:52px">
+              <div>
+                <h2 class="panel-title" style="font-size:15px"><i class="fa-solid fa-braille" style="color:#f59e0b"></i> Scatter Korelasi</h2>
+                <p class="panel-sub" id="cross-scatter-sub">Pilih pasangan pada dropdown</p>
+              </div>
+            </div>
+            <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin:10px 0 12px">
+              <select id="cross-scatter-pair" style="flex:1;min-width:220px"></select>
+            </div>
+            <div class="chart-wrap chart-fill" style="min-height:440px;flex:1 1 auto"><canvas id="cross-scatter-chart"></canvas></div>
+            <div id="cross-scatter-stat" style="margin-top:10px;text-align:center;min-height:44px"></div>
+          </div>
+
+          <div class="panel" style="display:flex;flex-direction:column;min-height:660px">
+            <div class="panel-head" style="margin-bottom:0;min-height:52px">
+              <div>
+                <h2 class="panel-title" style="font-size:15px"><i class="fa-solid fa-bullseye" style="color:#22c55e"></i> Radar Profil Gabungan</h2>
+                <p class="panel-sub">Profil keparahan per pilar VHMS vs cluster SOS (0–100)</p>
+              </div>
+            </div>
+            <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin:10px 0 12px">
+              <select id="cross-radar-unit" style="flex:1;min-width:220px" title="Pilih kompartemen SOS"></select>
+            </div>
+            <div class="chart-wrap chart-fill" style="min-height:440px;flex:1 1 auto"><canvas id="cross-radar-chart"></canvas></div>
+            <div id="cross-radar-stat" style="margin-top:10px;text-align:center;min-height:44px"></div>
+          </div>
+        </div>
+
+        <div class="panel">
+          <div class="panel-head">
+            <div>
+              <h2 class="panel-title" style="font-size:15px"><i class="fa-solid fa-table-list" style="color:#f59e0b"></i> Data Mentah Titik Korelasi</h2>
+              <p class="panel-sub" id="cross-scatter-datatable-sub">Nilai VHMS vs SOS pada setiap titik sampel untuk pasangan terpilih</p>
+            </div>
+          </div>
+          <div id="cross-scatter-datatable" class="table-scroll" style="max-height:340px"></div>
+        </div>
+
+        <div class="panel">
+          <div class="panel-head">
+            <div>
+              <h2 class="panel-title" style="font-size:15px"><i class="fa-solid fa-list-check" style="color:#22d3ee"></i> Tabel Korelasi &amp; Hipotesis</h2>
+              <p class="panel-sub">Peringkat kekuatan korelasi antar pasangan parameter terkurasi</p>
+            </div>
+          </div>
+          <div class="table-scroll">
+            <table class="data">
+              <thead>
+                <tr>
+                  <th>Parameter VHMS</th>
+                  <th>Parameter SOS</th>
+                  <th class="center">n</th>
+                  <th class="center">Pearson r</th>
+                  <th class="center">Basis</th>
+                  <th class="center">Kekuatan</th>
+                  <th>Hipotesis / Root Cause</th>
+                </tr>
+              </thead>
+              <tbody id="cross-pairs-body"></tbody>
+            </table>
+          </div>
+        </div>
+      </div><!-- /#cross-detail-panel -->
+
+    </div><!-- /#cross-area -->
+
+    <!-- ============ AREA DASHBOARD (DETAIL UNIT) ============ -->
+    <div id="dashboard-area" class="hidden" style="display:flex;flex-direction:column;gap:20px">
+
+      <!-- Bar unit aktif -->
+      <div class="unit-bar">
+        <button class="btn btn-ghost" id="btn-back-fleet"><i class="fa-solid fa-arrow-left"></i> Kembali ke Home</button>
+        <div class="unit-bar-info">
+          <span class="unit-bar-label">Unit Aktif:</span>
+          <span class="unit-bar-serial" id="unit-bar-serial">—</span>
+          <span class="badge" id="unit-bar-badge">—</span>
+        </div>
+      </div>
+
+      <!-- Toolbar tab -->
+      <div class="toolbar">
+        <div class="tabs">
+          <button class="tab-btn active" data-tab="overview"><i class="fa-solid fa-chart-line"></i> Overview</button>
+          <button class="tab-btn" data-tab="engine"><i class="fa-solid fa-gauge-high"></i> Engine System</button>
+          <button class="tab-btn" data-tab="hydraulic"><i class="fa-solid fa-oil-can"></i> Hydraulic System</button>
+          <button class="tab-btn" data-tab="cooling"><i class="fa-solid fa-snowflake"></i> Thermal &amp; Cooling</button>
+          <button class="tab-btn" data-tab="productivity"><i class="fa-solid fa-bolt"></i> Productivity</button>
+          <button class="tab-btn" data-tab="data-table"><i class="fa-solid fa-table-list"></i> Log Telemetri</button>
+        </div>
+        <div class="toolbar-right">
+          <span>File: <strong id="footer-file" style="color:#e2e8f0">—</strong></span>
+          <button class="btn btn-ghost" id="btn-export-csv"><i class="fa-solid fa-file-csv"></i> Ekspor CSV</button>
+          <button class="btn btn-ghost" id="btn-export-json"><i class="fa-solid fa-file-code"></i> Ekspor JSON</button>
+        </div>
+      </div>
+
+      <!-- KPI grid -->
+      <section id="kpi-section">
+        <div class="kpi-grid" id="kpi-grid"></div>
+      </section>
+
+      <!-- Chart & insight -->
+      <div class="content-grid align-stretch" id="charts-section">
+
+        <!-- Kolom kiri: chart -->
+        <div>
+          <!-- [POIN 3] Chart dinamis: dibangun otomatis dari kolom yang ada -->
+          <div id="charts-dynamic"></div>
+
+          <!-- Panel identitas & distribusi (hanya tab overview) -->
+          <div id="overview-panels">
+            <div class="two-col" style="margin-top:18px">
+              <div class="panel" id="identity-panel"></div>
+              <div class="panel" id="status-panel"></div>
+            </div>
+            <!-- Panel korelasi parameter -->
+            <div class="panel" id="correlation-panel" style="margin-top:18px"></div>
+            <!-- Panel timeline degradasi -->
+            <div class="panel" id="timeline-panel" style="margin-top:18px"></div>
+          </div>
+        </div>
+
+        <!-- Kolom kanan: AI insight (panel pertama menyesuaikan tinggi kolom kiri) -->
+        <div id="insights-section" class="insights-col">
+          <div class="panel panel-fill">
+            <div class="panel-head">
+              <div>
+                <h2 class="panel-title"><i class="fa-solid fa-screwdriver-wrench" style="color:#38bdf8"></i> Predictive Diagnostic</h2>
+                <p class="panel-sub">Deteksi otomatis &amp; rekomendasi tindakan</p>
+              </div>
+              <span class="badge INFO">Auto-Analyzed</span>
+            </div>
+            <div id="healthy-summary" style="margin-bottom:12px"></div>
+            <div class="anomaly-list list-fill" id="anomaly-list">
+              <div class="empty-state" style="padding:30px"><p style="font-size:12px">Menganalisis...</p></div>
+            </div>
+          </div>
+
+          <div class="panel" id="efficiency-panel" style="margin-top:18px"></div>
+        </div>
+      </div>
+
+      <!-- Tabel log telemetri -->
+      <section id="table-section" class="hidden">
+        <div class="panel">
+          <div class="table-toolbar">
+            <div>
+              <h2 class="panel-title"><i class="fa-solid fa-list-check" style="color:#0ea5e9"></i> Historical Telemetry Data Log</h2>
+              <p class="panel-sub" id="table-count">—</p>
+            </div>
+            <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
+              <input type="search" id="table-search" placeholder="Cari SMR / tanggal / status..." style="width:220px">
+              <select id="table-filter">
+                <option value="ALL">Semua Status</option>
+                <option value="CRITICAL">Critical</option>
+                <option value="WARNING">Warning</option>
+                <option value="NORMAL">Normal</option>
+              </select>
+              <button class="btn btn-primary" id="btn-report"><i class="fa-solid fa-print"></i> Cetak Laporan</button>
+            </div>
+          </div>
+          <div class="table-scroll">
+            <table class="data">
+              <thead id="table-head"></thead>
+              <tbody id="table-body"></tbody>
+            </table>
+          </div>
+          <p style="margin-top:10px;font-size:10.5px;color:#475569">
+            Klik judul kolom untuk mengurutkan. Baris merah = critical, kuning = warning.
+          </p>
+        </div>
+      </section>
+
+    </div>
+
+    <!-- ============ AREA SOS OIL ANALYSIS ============ -->
+    <div id="sos-area" class="hidden" style="display:flex;flex-direction:column;gap:20px">
+
+      <!-- SOS Equipment Overview Panel -->
+      <div id="sos-fleet-panel" style="display:flex;flex-direction:column;gap:20px">
+
+        <!-- Form Upload (tampil saat belum ada data) -->
+        <div class="panel" id="sos-upload-wrap" style="padding:0;border:none;background:transparent;box-shadow:none">
+          <div class="dropzone" id="sos-dropzone" style="border-color:#f59e0b55">
+            <div class="dz-icon" style="color:#f59e0b"><i class="fa-solid fa-flask"></i></div>
+            <h3>Muat Data Lab SOS</h3>
+            <p>Tarik &amp; lepas <strong>satu atau banyak file</strong> <strong>.csv / .xlsx</strong> ke sini, atau pilih manual.</p>
+            <div style="display:flex;gap:10px;justify-content:center;flex-wrap:wrap">
+              <button class="btn btn-primary" id="sos-btn-pick"><i class="fa-solid fa-folder-open"></i> Pilih File CSV (bisa banyak)</button>
+            </div>
+            <input type="file" id="sos-file-input" accept=".csv,.txt,.xls,.xlsx" multiple class="hidden">
+            <p style="margin-top:18px;font-size:11px;color:#475569">
+              Format didukung: export lab <em>Intertek</em>, <em>Trakindo</em>, atau <em>Dealer Lab</em>.
+              Kolom wajib: <code>Lab No / Equipment ID</code>, <code>Component</code>, elemen keausan (<code>Fe, Cu, Si, Al...</code>).
+              File diproses di browser — <strong>tidak ada data dikirim ke server</strong>.
+            </p>
+          </div>
+        </div>
+
+        <!-- Konten (tampil setelah ada data) -->
+        <div id="sos-content" class="hidden" style="display:flex;flex-direction:column;gap:20px">
+
+          <!-- Toolbar -->
+          <div class="toolbar">
+            <div>
+              <h2 class="panel-title" style="font-size:17px"><i class="fa-solid fa-flask" style="color:#f59e0b"></i> SOS Oil Analysis — Scheduled Oil Sampling</h2>
+              <p class="panel-sub">Analisis laboratorium oli kompartemen alat berat</p>
+            </div>
+            <div class="toolbar-right" style="gap:10px">
+              <button class="btn btn-ghost" id="sos-btn-export"><i class="fa-solid fa-file-csv"></i> Ekspor Data</button>
+              <button class="btn btn-ghost" id="sos-btn-export-ranking"><i class="fa-solid fa-ranking-star"></i> Ekspor Peringkat</button>
+              <button class="btn btn-ghost" id="sos-btn-clear"><i class="fa-solid fa-trash"></i> Kosongkan</button>
+              <button class="btn btn-ghost" id="sos-btn-heatmap"><i class="fa-solid fa-grip"></i> Heatmap</button>
+              <button class="btn btn-cyan" id="sos-btn-comparison"><i class="fa-solid fa-ranking-star"></i> Perbandingan SOS</button>
+              <button class="btn btn-primary" id="sos-btn-add"><i class="fa-solid fa-plus"></i> Tambah SOS</button>
+            </div>
+          </div>
+
+          <!-- KPI Cards -->
+          <div class="kpi-grid" id="sos-kpi-grid"></div>
+
+          <!-- Model distribution -->
+          <div class="panel" style="padding:14px 18px">
+            <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+              <span style="font-size:11px;text-transform:uppercase;letter-spacing:.8px;color:#64748b;font-weight:600">Model Terdeteksi:</span>
+              <div id="sos-models" style="display:flex;gap:8px;flex-wrap:wrap"></div>
+            </div>
+          </div>
+
+          <!-- Fleet Table -->
+          <div class="panel">
+            <div class="table-toolbar">
+              <div>
+                <h2 class="panel-title"><i class="fa-solid fa-list-check" style="color:#f59e0b"></i> SOS Equipment — Status per Kompartemen</h2>
+                <p class="panel-sub" id="sos-fleet-count">—</p>
+              </div>
+              <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
+                <label for="sos-value-mode" style="font-size:11px;color:#94a3b8;display:flex;align-items:center;gap:6px">
+                  <i class="fa-solid fa-table-cells"></i> Nilai parameter:
+                </label>
+                <select id="sos-value-mode" title="Sumber nilai kolom parameter (Fe, Cu, Si, PQI, V100) — dihitung pada window 4000 jam terakhir">
+                  <option value="last">Sampel Terbaru</option>
+                  <option value="avg">Rata-rata (window 4000 jam)</option>
+                  <option value="worst">Terburuk (window 4000 jam)</option>
+                </select>
+                <input type="search" id="sos-fleet-search" placeholder="Cari unit / model / kompartemen..." style="width:250px">
+                <select id="sos-fleet-filter">
+                  <option value="ALL">Semua Status</option>
+                  <option value="EXTREME">Critical</option>
+                  <option value="CRITICAL">Caution</option>
+                  <option value="MONITOR">Monitor</option>
+                  <option value="NORMAL">Normal</option>
+                </select>
+              </div>
+            </div>
+
+            <!-- Quick filter chips -->
+            <div id="sos-filter-bar" style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:0 4px 12px">
+              <span style="font-size:11px;text-transform:uppercase;letter-spacing:.8px;color:#64748b;font-weight:600">
+                <i class="fa-solid fa-filter"></i> Filter:
+              </span>
+              <button class="filter-chip" data-sos-quick-filter="ALL"><i class="fa-solid fa-layer-group"></i> Semua <span class="fc-count" data-count="ALL">0</span></button>
+              <button class="filter-chip is-critical" data-sos-quick-filter="EXTREME"><i class="fa-solid fa-skull-crossbones"></i> Critical <span class="fc-count" data-count="EXTREME">0</span></button>
+              <button class="filter-chip is-warning" data-sos-quick-filter="CRITICAL"><i class="fa-solid fa-triangle-exclamation"></i> Caution <span class="fc-count" data-count="CRITICAL">0</span></button>
+              <button class="filter-chip is-warning" data-sos-quick-filter="MONITOR"><i class="fa-solid fa-circle-exclamation"></i> Monitor <span class="fc-count" data-count="MONITOR">0</span></button>
+              <button class="filter-chip is-normal" data-sos-quick-filter="NORMAL"><i class="fa-solid fa-circle-check"></i> Normal <span class="fc-count" data-count="NORMAL">0</span></button>
+            </div>
+
+            <div class="table-scroll">
+              <table class="data">
+                <thead id="sos-fleet-head">
+                  <tr>
+                    <th class="center" data-sos-sort="rank" title="Rangking SOS — makin kecil = makin critical (berdasarkan parameter yang melewati threshold pada sampel terbaru)">Rangking</th>
+                    <th data-sos-sort="tier">Status</th>
+                    <th data-sos-sort="assetId">Asset ID</th>
+                    <th data-sos-sort="model">Model</th>
+                    <th data-sos-sort="component">Kompartemen</th>
+                    <th class="center" data-sos-sort="hmUnit">HM Unit</th>
+                    <th class="center" data-sos-sort="hmOil">HM Oil</th>
+                    <th class="center" data-sos-sort="additive_na">Na</th>
+                    <th class="center" data-sos-sort="wear_fe">Fe</th>
+                    <th class="center" data-sos-sort="wear_cu">Cu</th>
+                    <th class="center" data-sos-sort="wear_si">Si</th>
+                    <th class="center" data-sos-sort="wear_al">Al</th>
+                    <th class="center" data-sos-sort="pqi">PQI</th>
+                    <th class="center" data-sos-sort="visc_v100">V100</th>
+                    <th class="center" data-sos-sort="mprs">MPRS</th>
+                    <th class="center" data-sos-sort="lastDate">Tanggal</th>
+                    <th class="center">Aksi</th>
+                  </tr>
+                </thead>
+                <tbody id="sos-fleet-body"></tbody>
+              </table>
+            </div>
+            <p style="margin-top:10px;font-size:10.5px;color:#475569">
+              Formula: <strong>MPRS</strong> = Σ(weight × severity) × compound factor — menentukan <strong>Status</strong> (Normal/Monitor/Caution/Critical).
+              <strong>Criticality</strong> = Severity(45%) + Evidence(30%) + Trend(25%), dihitung pada <strong>window 4000 jam SMR/HM terakhir</strong>.
+              Nilai kolom parameter (Fe, Cu, Si, PQI, V100) dapat dipilih:
+              <strong>Sampel Terbaru</strong>, <strong>Rata-rata</strong> (window 4000 jam terakhir),
+              atau <strong>Terburuk</strong> (sampel dengan severity tertinggi pada window 4000 jam terakhir).
+              Bila HM tidak tersedia, sistem jatuh ke 5 sampel terakhir.
+              Klik baris untuk detail.
+            </p>
+          </div>
+        </div><!-- /#sos-content -->
+      </div><!-- /#sos-fleet-panel -->
+
+      <!-- SOS Detail Panel -->
+      <div id="sos-detail-panel" class="hidden" style="display:flex;flex-direction:column;gap:20px">
+        <div id="sos-detail-header"></div>
+        <div id="sos-comp-tabs" class="subtab-bar"></div>
+        <div id="sos-diagnostics"></div>
+        <div id="sos-charts-area"></div>
+        <div id="sos-sample-table"></div>
+      </div>
+
+      <!-- SOS Heatmap Panel (toggle) -->
+      <div id="sos-heatmap-panel" class="hidden">
+        <div class="panel-head">
+          <div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap">
+            <button class="btn btn-ghost" id="sos-btn-heatmap-close"><i class="fa-solid fa-arrow-left"></i> Kembali</button>
+            <div>
+              <h2 class="panel-title"><i class="fa-solid fa-grip" style="color:#f59e0b"></i> SOS Heatmap — Severity Matrix</h2>
+              <p class="panel-sub">Baris = kompartemen, kolom = parameter, warna = tingkat keparahan</p>
+            </div>
+          </div>
+        </div>
+        <div class="table-scroll" style="max-height:600px">
+          <table class="data heatmap-table" id="sos-heatmap-table">
+            <thead id="sos-heatmap-head"></thead>
+            <tbody id="sos-heatmap-body"></tbody>
+          </table>
+        </div>
+      </div><!-- /#sos-heatmap-panel -->
+
+      <!-- SOS Perbandingan Panel (toggle) -->
+      <div id="sos-comparison-panel" class="hidden" style="display:flex;flex-direction:column;gap:20px">
+        <div class="toolbar">
+          <div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap">
+            <button class="btn btn-ghost" id="sos-btn-comparison-close"><i class="fa-solid fa-arrow-left"></i> Kembali</button>
+            <div>
+              <h2 class="panel-title" style="font-size:17px"><i class="fa-solid fa-chart-line" style="color:#06b6d4"></i> SOS Perbandingan Kompartemen</h2>
+              <p class="panel-sub">Overlay tren parameter yang sama antar kompartemen (maks. 5)</p>
+            </div>
+          </div>
+          <div class="toolbar-right" style="gap:10px">
+            <select id="sos-comp-param" title="Pilih parameter">
+              <option value="wear_fe">Iron (Fe)</option>
+              <option value="wear_cu">Copper (Cu)</option>
+              <option value="wear_al">Aluminum (Al)</option>
+              <option value="wear_si">Silicon (Si)</option>
+              <option value="wear_cr">Chromium (Cr)</option>
+              <option value="wear_pb">Lead (Pb)</option>
+              <option value="pqi">PQI</option>
+              <option value="visc_v100">Viscosity @100°C</option>
+              <option value="water_pct">Water (%)</option>
+              <option value="tbn">TBN</option>
+            </select>
+            <select id="sos-comp-unit1" title="Kompartemen 1"></select>
+            <select id="sos-comp-unit2" title="Kompartemen 2"></select>
+            <select id="sos-comp-unit3" title="Kompartemen 3 (opsional)">
+              <option value="">— Tidak ada —</option>
+            </select>
+            <select id="sos-comp-unit4" title="Kompartemen 4 (opsional)">
+              <option value="">— Tidak ada —</option>
+            </select>
+            <select id="sos-comp-unit5" title="Kompartemen 5 (opsional)">
+              <option value="">— Tidak ada —</option>
+            </select>
+            <button class="btn btn-primary btn-sm" id="sos-btn-comp-draw"><i class="fa-solid fa-play"></i> Gambar</button>
+          </div>
+        </div>
+        <div class="panel">
+          <div class="chart-wrap" style="min-height:350px"><canvas id="sos-comparison-chart"></canvas></div>
+        </div>
+        <!-- Ringkasan & kesimpulan level hasil penilaian (Critical → Normal) -->
+        <div class="panel" id="sos-comparison-summary"></div>
+      </div><!-- /#sos-comparison-panel -->
+
+    </div><!-- /#sos-area -->
+
+    <!-- ============ PANEL DATA UNIT (GLOBAL, tampil di kedua mode) ============ -->
+    <!-- Satu panel yang sama, dipindahkan (move) oleh switcher ke area mode aktif,
+         sehingga konsisten di mode VHMS maupun SOS (data & localStorage sama).
+         [SATU UPLOAD 2026-10-01] Satu file mengisi Nomor Lambung (SN) SEKALIGUS
+         Section: format SN | No. Lambung | Section. -->
+    <div class="panel hidden" id="unitdb-panel" style="padding:14px 18px">
+      <div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap;justify-content:space-between">
+        <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+          <span style="font-size:11px;text-transform:uppercase;letter-spacing:.8px;color:#64748b;font-weight:600">
+            <i class="fa-solid fa-address-book" style="color:#22c55e"></i> Data Unit (Nomor Lambung &amp; Section)
+          </span>
+          <span class="chip" id="unitdb-status"><i class="fa-solid fa-circle-question"></i> Belum dimuat</span>
+        </div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <button class="btn btn-ghost btn-sm" id="btn-unitdb-pick"><i class="fa-solid fa-upload"></i> Unggah Data Unit (SN · Lambung · Section)</button>
+          <button class="btn btn-ghost btn-sm" id="btn-unitdb-template"><i class="fa-solid fa-download"></i> Unduh Template</button>
+          <button class="btn btn-ghost btn-sm" id="btn-unitdb-clear"><i class="fa-solid fa-eraser"></i> Hapus</button>
+        </div>
+      </div>
+      <p style="margin-top:10px;font-size:11px;color:#475569">
+        Format CSV: <code>SN</code>, <code>Nomor Lambung</code>, <code>Section</code> (kolom Section opsional).
+        Satu file mengisi Nomor Lambung SEKALIGUS Section untuk VHMS &amp; Portofolio, dicocokkan otomatis berdasarkan SN, dan tersimpan di browser Anda (localStorage).
+      </p>
+      <input type="file" id="unitdb-input" accept=".csv,.txt" class="hidden">
+    </div>
+
+    <!-- ============ AREA PORTOFOLIO (Critical/Warning + Lifetime + Top-Up Oil) ============ -->
+    <div id="portfolio-area" class="hidden" style="display:flex;flex-direction:column;gap:20px">
+      <div class="toolbar pf-no-print">
+        <div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap">
+          <button class="btn btn-ghost" id="btn-portfolio-back"><i class="fa-solid fa-arrow-left"></i> Kembali</button>
+          <div>
+            <h2 class="panel-title" style="font-size:17px"><i class="fa-solid fa-clipboard-list" style="color:#a78bfa"></i> Portofolio Reliability</h2>
+            <p class="panel-sub">Highlight kompartemen SOS berstatus Critical/Warning + konteks lifetime &amp; top-up oil + saran teknis</p>
+          </div>
+        </div>
+        <div class="toolbar-right" style="gap:10px">
+          <button class="btn btn-primary" id="btn-portfolio-print"><i class="fa-solid fa-print"></i> Cetak / Simpan PDF</button>
+        </div>
+      </div>
+
+      <!-- Kontrol: mode & input data pendukung -->
+      <div class="panel pf-no-print" style="padding:14px 18px">
+        <div style="display:flex;gap:16px;flex-wrap:wrap;align-items:center;justify-content:space-between">
+          <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
+            <span style="font-size:11px;text-transform:uppercase;letter-spacing:.8px;color:#64748b;font-weight:600">Mode:</span>
+            <select id="portfolio-mode">
+              <option value="fleet">Seluruh Armada</option>
+              <option value="unit">Per Unit</option>
+            </select>
+            <select id="portfolio-section" class="hidden" title="Filter Section unit">
+              <option value="">Semua Section</option>
+            </select>
+            <select id="portfolio-model" class="hidden" title="Filter model unit">
+              <option value="">Semua Model</option>
+            </select>
+            <select id="portfolio-unit" class="hidden" style="min-width:220px"></select>
+            <select id="portfolio-compartment" class="hidden" title="Filter kompartemen unit (cetak sebagian)">
+              <option value="">Semua Kompartemen</option>
+            </select>
+          </div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+            <span class="chip" id="portfolio-lifetime-status"><i class="fa-solid fa-gauge-high"></i> Lifetime: belum dimuat</span>
+            <button class="btn btn-ghost btn-sm" id="btn-lifetime-pick"><i class="fa-solid fa-upload"></i> Upload Lifetime</button>
+            <button class="btn btn-ghost btn-sm" id="btn-lifetime-clear"><i class="fa-solid fa-eraser"></i></button>
+          </div>
+        </div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:10px;justify-content:flex-end">
+          <span class="chip" id="portfolio-topup-status"><i class="fa-solid fa-oil-can"></i> Top-Up Oil: belum dimuat</span>
+          <button class="btn btn-ghost btn-sm" id="btn-topup-pick"><i class="fa-solid fa-upload"></i> Upload Top-Up Oil</button>
+          <button class="btn btn-ghost btn-sm" id="btn-topup-clear"><i class="fa-solid fa-eraser"></i></button>
+        </div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:10px;justify-content:flex-end">
+          <span class="chip" id="portfolio-section-status"><i class="fa-solid fa-layer-group"></i> Section: belum dimuat</span>
+          <span style="font-size:10.5px;color:#64748b">
+            <i class="fa-solid fa-circle-info"></i> Section diunggah bersama Nomor Lambung di panel <strong>Data Unit</strong> (mode VHMS/SOS).
+          </span>
+        </div>
+        <p style="margin-top:10px;font-size:10.5px;color:#475569">
+          Data pendukung dicocokkan otomatis via <strong>Nomor Lambung</strong>. Lifetime memakai kolom EquipmentNumber;
+          Top-Up Oil memakai Equipment (hanya jenis <code>TOU</code> &amp; <code>RPR</code>);
+          Section memakai kolom <code>SN, Nomor Lambung, Section</code> (satu file dengan Data Unit).
+        </p>
+        <input type="file" id="lifetime-input" accept=".csv,.txt" class="hidden">
+        <input type="file" id="topup-input" accept=".csv,.txt" class="hidden">
+      </div>
+
+      <!-- Hasil render portofolio -->
+      <div id="portfolio-content"></div>
+    </div>
+
+  </main>
+
+  <!-- ==================== FOOTER ==================== -->
+  <footer class="app-footer">
+    <p>Predictive Maintenance Telematics System &copy; 2026 — Mining Heavy Equipment Intelligence</p>
+    <p>Copyright &copy; Muhammad Nur Tauhid A.</p>
+    <p class="mono" id="footer-unit">Unit: —</p>
+    <p class="mono" id="footer-points">Data Points: —</p>
+    <p class="mono" id="footer-range">SMR: —</p>
+  </footer>
+
+  <!-- Loading & toast -->
+  <div class="loading-overlay hidden" id="loading">
+    <div style="text-align:center">
+      <div class="spinner"></div>
+      <p>Memuat data...</p>
+    </div>
+  </div>
+  <div class="toast-wrap" id="toast-wrap"></div>
+
+  <!-- ==================== MODAL: REKOMENDASI DIAGNOSTIK ==================== -->
+  <!-- Dibuka dari banner alert (klik di mana saja pada banner). -->
+  <div class="modal-overlay hidden" id="anomaly-modal">
+    <div class="modal-panel" role="dialog" aria-modal="true" aria-labelledby="anomaly-modal-title">
+      <div class="modal-head">
+        <div>
+          <h2 class="panel-title" id="anomaly-modal-title">
+            <i class="fa-solid fa-screwdriver-wrench" style="color:#38bdf8"></i> Rekomendasi Diagnostik
+          </h2>
+          <p class="panel-sub" id="anomaly-modal-sub">Deteksi otomatis &amp; rekomendasi tindakan</p>
+        </div>
+        <button class="modal-close" id="anomaly-modal-close" title="Tutup" aria-label="Tutup">
+          <i class="fa-solid fa-xmark"></i>
+        </button>
+      </div>
+      <div class="modal-body">
+        <div id="anomaly-modal-list" class="anomaly-list"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ==================== MODAL: SCATTER DETAIL (CROSS ANALYSIS) ==================== -->
+  <!-- Dibuka dari klik sel heatmap korelasi VHMS x SOS. -->
+  <div class="modal-overlay hidden" id="cross-scatter-modal">
+    <div class="modal-panel" role="dialog" aria-modal="true" aria-labelledby="cross-scatter-modal-title" style="max-width:900px">
+      <div class="modal-head">
+        <div>
+          <h2 class="panel-title" id="cross-scatter-modal-title">
+            <i class="fa-solid fa-braille" style="color:#f59e0b"></i> <span id="cross-modal-title-text">Scatter Korelasi</span>
+          </h2>
+          <p class="panel-sub" id="cross-modal-sub">—</p>
+        </div>
+        <button class="modal-close" id="cross-scatter-modal-close" title="Kembali" aria-label="Kembali">
+          <i class="fa-solid fa-arrow-left"></i>
+        </button>
+      </div>
+      <div class="modal-body">
+        <div id="cross-modal-stats" style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px"></div>
+        <div class="chart-wrap" style="height:380px;position:relative"><canvas id="cross-modal-scatter-chart"></canvas></div>
+        <div id="cross-modal-narrative" style="margin-top:16px"></div>
+        <div id="cross-modal-datatable" class="table-scroll" style="max-height:260px;margin-top:14px"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ==================== MODAL: PENGATURAN (TEMA & THRESHOLD) ==================== -->
+  <div class="modal-overlay hidden" id="settings-modal">
+    <div class="modal-panel" role="dialog" aria-modal="true" aria-labelledby="settings-modal-title" style="max-width:880px">
+      <div class="modal-head">
+        <div>
+          <h2 class="panel-title" id="settings-modal-title">
+            <i class="fa-solid fa-gear" style="color:#22d3ee"></i> Pengaturan
+          </h2>
+          <p class="panel-sub">Tema tampilan &amp; ambang batas (threshold) parameter</p>
+        </div>
+        <button class="modal-close" id="settings-modal-close" title="Tutup" aria-label="Tutup">
+          <i class="fa-solid fa-xmark"></i>
+        </button>
+      </div>
+      <div class="modal-body">
+        <!-- Sub-tab -->
+        <div class="subtab-bar" id="settings-tabs" style="margin-bottom:16px">
+          <button class="subtab-btn active" data-settings-tab="theme"><i class="fa-solid fa-palette"></i> Tema</button>
+          <button class="subtab-btn" data-settings-tab="vhms-threshold"><i class="fa-solid fa-sliders"></i> Threshold VHMS</button>
+          <button class="subtab-btn" data-settings-tab="sos-threshold"><i class="fa-solid fa-flask"></i> Threshold SOS</button>
+          <button class="subtab-btn" data-settings-tab="prioritas"><i class="fa-solid fa-list-ol"></i> Status &amp; SLA</button>
+        </div>
+
+        <!-- Panel: Tema -->
+        <div id="settings-panel-theme">
+          <p style="font-size:12px;color:var(--text-dim);margin-bottom:12px">Pilih tema tampilan. Pilihan tersimpan otomatis di browser.</p>
+          <div id="theme-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:12px"></div>
+        </div>
+
+        <!-- Panel: Threshold VHMS -->
+        <div id="settings-panel-vhms-threshold" class="hidden">
+          <p style="font-size:12px;color:var(--text-dim);margin-bottom:12px">
+            Ambang batas VHMS per <strong>keluarga model</strong> (tiap keluarga punya profil &amp; parameter berbeda).
+            Nilai disimpan di browser &amp; langsung dipakai untuk deteksi anomali.
+            <strong>Mode</strong>: <em>high</em> = makin besar makin bahaya, <em>low</em> = makin kecil makin bahaya.
+          </p>
+          <div style="display:flex;gap:10px;align-items:center;margin-bottom:12px;flex-wrap:wrap">
+            <label style="font-size:11px;color:var(--text-dim)">Keluarga:</label>
+            <select id="vhms-threshold-family"></select>
+          </div>
+          <div class="table-scroll" style="max-height:460px">
+            <table class="data" id="vhms-threshold-table">
+              <thead><tr><th>Parameter</th><th class="center">Warn</th><th class="center">Crit</th><th class="center">Mode</th><th>Label</th></tr></thead>
+              <tbody id="vhms-threshold-body"></tbody>
+            </table>
+          </div>
+          <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:14px;flex-wrap:wrap">
+            <button class="btn btn-ghost" id="btn-threshold-import"><i class="fa-solid fa-file-import"></i> Impor (JSON/CSV)</button>
+            <button class="btn btn-ghost" id="btn-threshold-export-csv"><i class="fa-solid fa-file-csv"></i> Ekspor CSV</button>
+            <button class="btn btn-ghost" id="btn-threshold-export"><i class="fa-solid fa-file-export"></i> Ekspor JSON</button>
+            <button class="btn btn-ghost" id="btn-threshold-reset-vhms"><i class="fa-solid fa-rotate-left"></i> Reset VHMS</button>
+            <button class="btn btn-primary" id="btn-threshold-save-vhms"><i class="fa-solid fa-floppy-disk"></i> Simpan VHMS</button>
+          </div>
+          <input type="file" id="threshold-import-input" accept=".json,.csv,.txt,application/json,text/csv" class="hidden">
+
+          <!-- [BARU 2026-10-01] Override threshold per MODEL UNIT (VHMS) -->
+          <div style="margin-top:22px;border-top:1px solid var(--border-2);padding-top:16px">
+            <h3 style="font-size:13px;margin:0 0 6px"><i class="fa-solid fa-tractor"></i> Threshold per Model Unit (VHMS)</h3>
+            <p style="font-size:11.5px;color:var(--text-dim);margin-bottom:10px">
+              Sebagian parameter berbeda antar <strong>model</strong> (mis. Fuel Rate/Boost HD785 vs D375A).
+              Override bersifat <em>opsional &amp; parsial</em>: cukup isi parameter yang berbeda —
+              parameter lain otomatis memakai nilai keluarga. Model dicocokkan longgar
+              (mis. "HD785-7" cocok dengan "HD785").
+            </p>
+            <div style="display:flex;gap:8px;align-items:center;margin-bottom:10px;flex-wrap:wrap">
+              <label style="font-size:11px;color:var(--text-dim)">Model:</label>
+              <input type="text" id="vhms-model-name" list="vhms-model-list" placeholder="mis. HD785" style="min-width:150px">
+              <datalist id="vhms-model-list"></datalist>
+              <button class="btn btn-ghost btn-sm" id="btn-vhms-model-add"><i class="fa-solid fa-plus"></i> Tambah / Muat</button>
+              <button class="btn btn-ghost btn-sm" id="btn-vhms-model-delete" title="Hapus override model ini"><i class="fa-solid fa-trash"></i></button>
+              <span id="vhms-model-chip" style="font-size:11px;color:var(--text-mute)"></span>
+            </div>
+            <div class="table-scroll" style="max-height:300px">
+              <table class="data" id="vhms-model-threshold-table">
+                <thead><tr><th>Parameter</th><th class="center">Warn</th><th class="center">Crit</th><th class="center">Mode</th><th>Label</th></tr></thead>
+                <tbody id="vhms-model-threshold-body"></tbody>
+              </table>
+            </div>
+            <div id="vhms-model-validation" style="margin-top:10px;font-size:11.5px"></div>
+            <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:10px;flex-wrap:wrap">
+              <button class="btn btn-primary" id="btn-vhms-model-save"><i class="fa-solid fa-floppy-disk"></i> Simpan Model</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Panel: Threshold SOS -->
+        <div id="settings-panel-sos-threshold" class="hidden">
+          <p style="font-size:12px;color:var(--text-dim);margin-bottom:12px">
+            Ambang batas SOS per kompartemen. Beberapa parameter memakai batas <em>low</em> (mis. viscositas/TBN — makin rendah makin buruk).
+          </p>
+          <div style="display:flex;gap:10px;align-items:center;margin-bottom:12px;flex-wrap:wrap">
+            <label style="font-size:11px;color:var(--text-dim)">Kompartemen:</label>
+            <select id="sos-threshold-component"></select>
+          </div>
+          <div class="table-scroll" style="max-height:420px">
+            <table class="data" id="sos-threshold-table">
+              <thead><tr><th>Parameter</th><th class="center">Warn</th><th class="center">Crit</th><th class="center">Extreme</th><th class="center">Warn Low</th><th class="center">Crit Low</th></tr></thead>
+              <tbody id="sos-threshold-body"></tbody>
+            </table>
+          </div>
+          <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:14px;flex-wrap:wrap">
+            <button class="btn btn-ghost" id="btn-threshold-reset-sos"><i class="fa-solid fa-rotate-left"></i> Reset SOS</button>
+            <button class="btn btn-primary" id="btn-threshold-save-sos"><i class="fa-solid fa-floppy-disk"></i> Simpan SOS</button>
+          </div>
+
+          <!-- [BARU 2026-10-01] Override threshold per MODEL UNIT (SOS) -->
+          <div style="margin-top:22px;border-top:1px solid var(--border-2);padding-top:16px">
+            <h3 style="font-size:13px;margin:0 0 6px"><i class="fa-solid fa-flask-vial"></i> Threshold per Model Unit (SOS)</h3>
+            <p style="font-size:11.5px;color:var(--text-dim);margin-bottom:10px">
+              Ambang batas SOS bisa berbeda antar <strong>model</strong> untuk kompartemen yang sama
+              (mis. ENGINE HD785 vs PC2000). Override bersifat <em>opsional &amp; parsial</em> —
+              parameter yang tidak diisi memakai nilai kompartemen. Model dicocokkan longgar.
+            </p>
+            <div style="display:flex;gap:8px;align-items:center;margin-bottom:10px;flex-wrap:wrap">
+              <label style="font-size:11px;color:var(--text-dim)">Model:</label>
+              <input type="text" id="sos-model-name" list="sos-model-list" placeholder="mis. HD785" style="min-width:140px">
+              <datalist id="sos-model-list"></datalist>
+              <label style="font-size:11px;color:var(--text-dim)">Kompartemen:</label>
+              <select id="sos-model-component"></select>
+              <button class="btn btn-ghost btn-sm" id="btn-sos-model-add"><i class="fa-solid fa-plus"></i> Tambah / Muat</button>
+              <button class="btn btn-ghost btn-sm" id="btn-sos-model-delete" title="Hapus override model ini"><i class="fa-solid fa-trash"></i></button>
+              <span id="sos-model-chip" style="font-size:11px;color:var(--text-mute)"></span>
+            </div>
+            <div class="table-scroll" style="max-height:300px">
+              <table class="data" id="sos-model-threshold-table">
+                <thead><tr><th>Parameter</th><th class="center">Warn</th><th class="center">Crit</th><th class="center">Extreme</th><th class="center">Warn Low</th><th class="center">Crit Low</th></tr></thead>
+                <tbody id="sos-model-threshold-body"></tbody>
+              </table>
+            </div>
+            <div id="sos-model-validation" style="margin-top:10px;font-size:11.5px"></div>
+            <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:10px;flex-wrap:wrap">
+              <button class="btn btn-primary" id="btn-sos-model-save"><i class="fa-solid fa-floppy-disk"></i> Simpan Model</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Panel: Status & SLA (Tindak Lanjut) -->
+        <div id="settings-panel-prioritas" class="hidden">
+          <p style="font-size:12px;color:var(--text-dim);margin-bottom:12px">
+            <strong>Status</strong> ditentukan dari <strong>nilai vs ambang threshold</strong> parameter:
+            melewati ambang <em>warning</em> &rarr; <strong>WARNING</strong>,
+            melewati ambang <em>critical</em> &rarr; <strong>CRITICAL</strong>.
+            Atur <strong>SLA (Target)</strong> tiap status di bawah ini
+            (tampil di tabel Suggestion halaman Portofolio).
+          </p>
+          <div class="table-scroll" style="max-height:360px">
+            <table class="data" id="followup-priority-table">
+              <thead><tr><th class="center">Status</th><th>Target (SLA)</th></tr></thead>
+              <tbody id="followup-priority-body"></tbody>
+            </table>
+          </div>
+          <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:14px;flex-wrap:wrap">
+            <button class="btn btn-ghost" id="btn-followup-reset"><i class="fa-solid fa-rotate-left"></i> Reset</button>
+            <button class="btn btn-primary" id="btn-followup-save"><i class="fa-solid fa-floppy-disk"></i> Simpan Status</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ==================== MODAL: PRINT PREVIEW PORTOFOLIO ==================== -->
+  <div class="modal-overlay hidden" id="portfolio-preview-modal">
+    <div class="modal-panel pf-preview-panel" role="dialog" aria-modal="true" aria-labelledby="pf-preview-title">
+      <div class="modal-head pf-no-print">
+        <div>
+          <h2 class="panel-title" id="pf-preview-title">
+            <i class="fa-solid fa-file-pdf" style="color:#a78bfa"></i> Pratinjau Cetak / PDF
+          </h2>
+          <p class="panel-sub">Periksa tampilan sebelum menyimpan PDF</p>
+        </div>
+        <button class="modal-close" id="pf-preview-close" title="Tutup" aria-label="Tutup">
+          <i class="fa-solid fa-xmark"></i>
+        </button>
+      </div>
+      <div class="pf-preview-body">
+        <div class="pf-preview-paper" id="pf-preview-paper"></div>
+      </div>
+      <div class="pf-preview-foot pf-no-print">
+        <span class="pf-preview-hint"><i class="fa-solid fa-circle-info"></i> Tip: pada dialog cetak pilih <strong>Tujuan → Save as PDF</strong>.</span>
+        <div style="display:flex;gap:10px;flex-wrap:wrap">
+          <button class="btn btn-ghost" id="pf-preview-cancel"><i class="fa-solid fa-xmark"></i> Batal</button>
+          <button class="btn btn-primary" id="pf-preview-print"><i class="fa-solid fa-print"></i> Cetak / Simpan PDF</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ==================== SCRIPT ==================== -->
+  <!-- Versi query (?v=) untuk cache-busting: naikkan saat ada perubahan JS. -->
+  <script src="js/vhms-config.js?v=20261001q"></script>
+  <script src="js/vhms-profiles.js?v=20261001q"></script>
+  <script src="js/vhms-knowledge.js?v=20261001q"></script>
+  <script src="js/vhms-parser.js?v=20261001q"></script>
+  <script src="js/vhms-validate.js?v=20261001q"></script>
+  <script src="js/vhms-unit-db.js?v=20261001q"></script>
+  <script src="js/vhms-analytics.js?v=20261001q"></script>
+  <script src="js/vhms-fleet-store.js?v=20261001q"></script>
+  <script src="js/vhms-ranking.js?v=20261001q"></script>
+  <script src="js/vhms-render.js?v=20261001q"></script>
+  <script src="js/vhms-app.js?v=20261001q"></script>
+
+  <!-- SOS Oil Analysis Module -->
+  <script src="js/sos-config.js?v=20261001q"></script>
+  <script src="js/sos-parser.js?v=20261001q"></script>
+  <script src="js/sos-analytics.js?v=20261001q"></script>
+  <script src="js/sos-store.js?v=20261001q"></script>
+  <script src="js/sos-render.js?v=20261001q"></script>
+  <script src="js/sos-app.js?v=20261001q"></script>
+
+  <!-- Cross Analysis (VHMS x SOS) — setelah kedua modul dimuat -->
+  <script src="js/vhms-cross.js?v=20261001q"></script>
+  <script src="js/vhms-cross-render.js?v=20261001q"></script>
+
+  <!-- Portofolio Reliability: parser data pendukung + store + KB + render.
+       Dimuat SETELAH SOS & VHMS karena bergantung pada keduanya. -->
+  <script src="js/lifetime-parser.js?v=20261001q"></script>
+  <script src="js/topup-parser.js?v=20261001q"></script>
+  <script src="js/section-parser.js?v=20261001q"></script>
+  <script src="js/portfolio-store.js?v=20261001q"></script>
+  <script src="js/sos-knowledge.js?v=20261001q"></script>
+  <script src="js/portfolio-render.js?v=20261001q"></script>
+  <script src="js/portfolio-app.js?v=20261001q"></script>
+
+  <!-- Pengaturan (Tema & Threshold) — paling akhir, butuh semua modul -->
+  <script src="js/vhms-settings.js?v=20261001q"></script>
+
+  <!-- SOS ↔ VHMS switcher -->
+  <script>
+  (function () {
+    var mode = 'vhms'; // 'vhms' | 'sos'
+    var btnSwitch = document.getElementById('btn-switch-sos');
+    var btnFleet = document.getElementById('btn-fleet');
+    var vhmsAreas = ['welcome-area', 'fleet-area', 'comparison-area', 'cross-area', 'dashboard-area'];
+    var sosArea = document.getElementById('sos-area');
+    var alertBanner = document.getElementById('alert-banner');
+    // [PERSISTENSI MODE] Simpan mode aktif agar reload tidak jatuh kembali ke VHMS.
+    var MODE_KEY = 'oms.activeMode';
+
+    /**
+     * Pindahkan panel Database Unit (global) ke posisi tepat di area mode aktif,
+     * yaitu setelah toolbar dan sebelum grid KPI — agar konsisten di VHMS & SOS.
+     * @param {'vhms'|'sos'} which
+     */
+    function placeUnitDb(which) {
+      var panel = document.getElementById('unitdb-panel');
+      if (!panel) return;
+      if (which === 'vhms') {
+        var fleetCards = document.getElementById('fleet-status-cards');
+        if (fleetCards && fleetCards.parentNode) {
+          fleetCards.parentNode.insertBefore(panel, fleetCards);
+          panel.classList.remove('hidden');
+        }
+      } else {
+        var sosCards = document.getElementById('sos-kpi-grid');
+        if (sosCards && sosCards.parentNode) {
+          sosCards.parentNode.insertBefore(panel, sosCards);
+          panel.classList.remove('hidden');
+        }
+      }
+    }
+
+    function showVHMS() {
+      mode = 'vhms';
+      try { sessionStorage.setItem(MODE_KEY, 'vhms'); } catch (e) {}
+      if (sosArea) sosArea.classList.add('hidden');
+      // [ISOLASI VIEW] Tutup halaman Portofolio bila sedang terbuka.
+      var pfAreaV = document.getElementById('portfolio-area');
+      if (pfAreaV) pfAreaV.classList.add('hidden');
+      if (alertBanner) alertBanner.classList.remove('hidden');
+      // Panel Database Unit: pindah ke area VHMS & tampilkan
+      placeUnitDb('vhms');
+      btnSwitch.innerHTML = '<i class="fa-solid fa-flask"></i> <span class="hide-sm">SOS Lab</span>';
+      btnSwitch.style.borderColor = '#f59e0b55';
+      btnSwitch.style.color = '#f59e0b';
+      // Label tombol home disesuaikan per mode (konsisten)
+      if (btnFleet) {
+        btnFleet.innerHTML = '<i class="fa-solid fa-house"></i> <span class="hide-sm">Home</span>';
+        btnFleet.title = 'Kembali ke halaman utama';
+      }
+      // Restore VHMS view sesuai state terakhir (fleet / unit / comparison)
+      if (window.VHMS_APP) {
+        var st = VHMS_APP.getState();
+        if (st.view === 'unit' && VHMS_APP.showUnitView) {
+          VHMS_APP.showUnitView();
+        } else if (st.view === 'comparison' && VHMS_APP.showComparisonView) {
+          VHMS_APP.showComparisonView();
+        } else {
+          VHMS_APP.showFleetView();
+        }
+      }
+    }
+
+    function showSOS() {
+      mode = 'sos';
+      try { sessionStorage.setItem(MODE_KEY, 'sos'); } catch (e) {}
+      // Hide all VHMS areas
+      vhmsAreas.forEach(function (id) {
+        var el = document.getElementById(id);
+        if (el) el.classList.add('hidden');
+      });
+      if (alertBanner) alertBanner.classList.add('hidden');
+      // [ISOLASI VIEW] Tutup halaman Portofolio bila sedang terbuka.
+      var pfAreaS = document.getElementById('portfolio-area');
+      if (pfAreaS) pfAreaS.classList.add('hidden');
+      if (sosArea) sosArea.classList.remove('hidden');
+      // [RESET HEADER] Mode SOS tidak menampilkan identitas unit di header
+      // global (detail SOS punya header sendiri), jadi kembalikan ke netral.
+      if (window.VHMS_RENDER && VHMS_RENDER.resetHeader) {
+        try { VHMS_RENDER.resetHeader(); } catch (e) {}
+      }
+      // Render SOS home dulu (memastikan #sos-content tampil bila ada data),
+      // lalu pindahkan panel Database Unit ke area SOS agar konsisten.
+      if (window.SOS_RENDER && SOS_RENDER.showView) {
+        SOS_RENDER.showView('fleet');
+      }
+      placeUnitDb('sos');
+      btnSwitch.innerHTML = '<i class="fa-solid fa-truck-monster"></i> <span class="hide-sm">VHMS</span>';
+      btnSwitch.style.borderColor = '#0ea5e955';
+      btnSwitch.style.color = '#0ea5e9';
+      // Label tombol home disesuaikan per mode (konsisten)
+      if (btnFleet) {
+        btnFleet.innerHTML = '<i class="fa-solid fa-house"></i> <span class="hide-sm">Home</span>';
+        btnFleet.title = 'Kembali ke halaman utama SOS';
+      }
+    }
+
+    if (btnSwitch) {
+      btnSwitch.addEventListener('click', function () {
+        userSwitched = true;   // tandai ada aksi manual pengguna
+        if (mode === 'vhms') showSOS();
+        else showVHMS();
+      });
+    }
+
+    // Inisialisasi: pulihkan mode terakhir (VHMS/SOS) agar reload tidak
+    // jatuh kembali ke VHMS.
+    // PENTING: pemulihan ditunda singkat agar SOS_STORE.restore() /
+    // VHMS_FLEET.restore() selesai lebih dulu. Namun bila pengguna sudah
+    // menekan tombol switch sebelum penundaan selesai (race condition),
+    // pemulihan TIDAK boleh menimpa pilihan pengguna.
+    var userSwitched = false;
+    function restoreActiveMode() {
+      if (userSwitched) return;   // pengguna sudah memilih -> jangan override
+      // [GUARD PORTOFOLIO] Bila halaman Portofolio sudah terbuka (mis. pengguna
+      // membukanya sebelum delay selesai), JANGAN pulihkan mode VHMS/SOS —
+      // kalau tidak, dropzone VHMS akan muncul menimpa Portofolio.
+      var pfArea = document.getElementById('portfolio-area');
+      if (pfArea && !pfArea.classList.contains('hidden')) return;
+      var startMode = 'vhms';
+      try { startMode = sessionStorage.getItem(MODE_KEY) || 'vhms'; } catch (e) {}
+      if (startMode === 'sos') {
+        showSOS();
+      } else {
+        showVHMS();
+      }
+    }
+    // Susun ulang saat DOM siap (setelah app init). Fallback bila sudah siap.
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', function () { setTimeout(restoreActiveMode, 0); });
+    } else {
+      setTimeout(restoreActiveMode, 0);
+    }
+
+    /* API mode-aware untuk tombol "Home":
+     * Saat mode SOS aktif, klik tombol Home cukup mengembalikan ke
+     * halaman utama SOS (fleet), BUKAN membuka halaman VHMS di atasnya. */
+    window.VHMS_SOS_MODE = {
+      isSOS: function () { return mode === 'sos'; },
+      isVHMS: function () { return mode === 'vhms'; },
+      get: function () { return mode; },
+      /* [SETTINGS] Segarkan tampilan mode aktif setelah threshold berubah. */
+      refresh: function () {
+        // Bila halaman PORTOFOLIO sedang terbuka, segarkan juga (ikut threshold baru).
+        var pfArea = document.getElementById('portfolio-area');
+        if (pfArea && !pfArea.classList.contains('hidden') && window.PORTFOLIO_APP) {
+          try { window.PORTFOLIO_APP.refresh(); } catch (e) {}
+        }
+        if (mode === 'sos') {
+          if (window.VHMS_RENDER && VHMS_RENDER.resetHeader) {
+            try { VHMS_RENDER.resetHeader(); } catch (e) {}
+          }
+          if (window.SOS_RENDER && SOS_RENDER.showView) {
+            try { SOS_RENDER.showView('fleet'); } catch (e) {}
+          }
+        } else if (window.VHMS_APP && VHMS_APP.refreshCurrent) {
+          try { VHMS_APP.refreshCurrent(); } catch (e) {}
+        }
+      },
+      goHome: function () {
+        // [FIX NAVIGASI PORTOFOLIO] Bila halaman Portofolio sedang terbuka,
+        // tutup dulu SAAT INI JUGA. Tanpa ini, VHMS_APP.showFleetView() akan
+        // early-return karena guard isPortfolioOpen(), sehingga klik "Home"
+        // seolah tidak melakukan apa-apa.
+        // PENTING: tutup langsung via classList (BUKAN PORTFOLIO_APP.close())
+        // agar tidak memanggil goHome() lagi -> mencegah rekursi.
+        var pfArea = document.getElementById('portfolio-area');
+        if (pfArea && !pfArea.classList.contains('hidden')) {
+          pfArea.classList.add('hidden');
+        }
+        if (mode === 'sos') {
+          // [RESET HEADER] Halaman utama SOS tidak menampilkan identitas unit.
+          if (window.VHMS_RENDER && VHMS_RENDER.resetHeader) {
+            try { VHMS_RENDER.resetHeader(); } catch (e) {}
+          }
+          // Pastikan Cross Analysis (area VHMS) ikut disembunyikan.
+          var crossEl = document.getElementById('cross-area');
+          if (crossEl) crossEl.classList.add('hidden');
+          // Pastikan seluruh area VHMS tetap tersembunyi (mode SOS murni).
+          ['welcome-area', 'fleet-area', 'comparison-area', 'dashboard-area'].forEach(function (id) {
+            var e = document.getElementById(id);
+            if (e) e.classList.add('hidden');
+          });
+          // [FIX] Tampilkan kembali area SOS. openPortfolio() menambahkan
+          // 'hidden' ke #sos-area; tanpa ini, Home dari mode SOS yang dibuka
+          // setelah Portofolio akan menampilkan layar kosong.
+          if (sosArea) sosArea.classList.remove('hidden');
+          if (window.SOS_RENDER && SOS_RENDER.showView) SOS_RENDER.showView('fleet');
+        } else if (window.VHMS_APP && VHMS_APP.showFleetView) {
+          VHMS_APP.showFleetView();
+        }
+      }
+    };
+
+    /* Tombol header "Cetak / Ekspor Laporan" — mode-aware.
+     * Capture phase agar dapat membelokkan aksi SEBELUM handler VHMS jalan:
+     *   - Mode VHMS -> diteruskan ke handler VHMS (exportReport).
+     *   - Mode SOS  -> mencetak halaman SOS (bukan VHMS). */
+    var btnReport = document.getElementById('btn-report-1');
+    if (btnReport) {
+      btnReport.addEventListener('click', function (e) {
+        if (mode !== 'sos') return;       // biarkan VHMS menangani
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        // Cetak halaman SOS
+        document.body.classList.add('printing');
+        setTimeout(function () {
+          window.print();
+          setTimeout(function () { document.body.classList.remove('printing'); }, 400);
+        }, 120);
+      }, true);
+    }
+  })();
+  </script>
+</body>
+</html>
