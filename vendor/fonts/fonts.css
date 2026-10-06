@@ -1,0 +1,20 @@
+/* =========================================================================
+ * vendor/fonts/fonts.css — Font lokal (offline-ready)
+ * -------------------------------------------------------------------------
+ * [P2-5 2026-10-05] Menggantikan pemuatan Google Fonts CDN.
+ *
+ * CARA MENGISI (di mesin yang punya internet):
+ *   node tools/fetch-fonts.js
+ * Script itu mengunduh Inter (400,500,600,700,800) + JetBrains Mono
+ * (400,600,700) sebagai .woff2 ke folder ini dan menulis ulang berkas ini
+ * dengan @font-face ber-`url()` lokal.
+ *
+ * BILA BERKAS FONT BELUM ADA:
+ *   Aplikasi TIDAK rusak. css/vhms-dashboard.css mendefinisikan rantai
+ *   fallback font sistem: 'Inter', 'Segoe UI', system-ui, -apple-system,
+ *   sans-serif — dan 'JetBrains Mono', monospace untuk angka. Tampilan tetap
+ *   baik, hanya tipografinya memakai font sistem.
+ *
+ * Jadi berkas ini sengaja KOSONG-aman (tidak ada @import CDN) agar tidak ada
+ * permintaan jaringan sama sekali saat runtime.
+ * ========================================================================= */

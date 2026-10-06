@@ -1,0 +1,14 @@
+{
+  "name": "arpc-dashboard",
+  "version": "1.0.0",
+  "description": "Asset Reliability Performance Center (ARPC) — Predictive maintenance dashboard supporting VHMS telemetry (Komatsu/CAT), SOS oil analysis, cross-correlation, and portfolio reporting. Multi-brand, offline-ready.",
+  "private": true,
+  "scripts": {
+    "start": "node serve.js",
+    "test": "node test/test-suite.js",
+    "build": "node tools/build-deploy.js",
+    "anonymize": "node tools/anonymize-samples.js",
+    "verify:samples": "node tools/check-templates.js"
+  },
+  "license": "UNLICENSED"
+}

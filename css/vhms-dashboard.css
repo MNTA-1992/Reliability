@@ -1,0 +1,1771 @@
+/* =========================================================================
+ * vhms-dashboard.css — Styling mandiri untuk VHMS Predictive Dashboard
+ * Tidak bergantung Tailwind CDN agar tetap jalan saat offline di site.
+ * ========================================================================= */
+
+/* ---------- Accessibility: Respect prefers-reduced-motion ---------- */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: .01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: .01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* ---------- Reset & dasar ---------- */
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --bg:        #0f172a;
+  --bg-deep:   #020617;
+  --card:      #0f172a;
+  --card-2:    #1e293b;
+  --border:    #1e293b;
+  --border-2:  #334155;
+  --text:      #f1f5f9;
+  --text-dim:  #a9b6c7;
+  --text-mute: #9aa8ba;
+
+  --red:    #ef4444;
+  --amber:  #f59e0b;
+  --emerald:#10b981;
+  --sky:    #0ea5e9;
+  --cyan:   #06b6d4;
+  --violet: #8b5cf6;
+
+  /* Token tema (dipakai lintas komponen agar mudah di-reskin) */
+  --panel-grad-a: #0f172a;      /* gradien panel: atas */
+  --panel-grad-b: #0b1220;      /* gradien panel: bawah */
+  --header-bg:    rgba(15, 23, 42, 0.96);
+  --scroll-track: #0b1220;
+  --scroll-thumb: #334155;
+  --scroll-thumb-hover: #475569;
+  --hover-row:    rgba(14, 165, 233, 0.08);
+  --shadow:       rgba(0, 0, 0, 0.25);
+  --accent:       #22d3ee;      /* aksen utama (border/fokus) */
+  --accent-soft:  rgba(34, 211, 238, 0.20);
+
+  /* [REVISI #1] Lebar konten maksimum — dipakai bersama oleh .app-header dan
+   * .app-main agar tepi kiri/kanan header & konten selalu segaris. */
+  --content-max:  1700px;
+  --content-pad:  24px;
+}
+
+/* =========================================================================
+ * TEMA — pilih lewat <body data-theme="...">. Default: "slate" (tanpa kelas).
+ * Menimpa token di atas + beberapa komponen yang memakai nilai tetap.
+ * ========================================================================= */
+
+/* ----- TEMA: Slate (default) — tidak perlu blok (sudah bawaan :root). ----- */
+
+/* ----- TEMA: Midnight (biru malam lebih pekat + aksen indigo) ----- */
+body[data-theme="midnight"] {
+  --bg: #0b1220; --bg-deep: #050912;
+  --card: #0d1526; --card-2: #172036;
+  --border: #172036; --border-2: #2a3a5c;
+  --text: #e8eefc; --text-dim: #93a4c8; --text-mute: #5f6f92;
+  --panel-grad-a: #0d1526; --panel-grad-b: #070c17;
+  --header-bg: rgba(11, 18, 32, 0.96);
+  --scroll-track: #070c17; --scroll-thumb: #26324c; --scroll-thumb-hover: #3a4a6b;
+  --accent: #818cf8; --accent-soft: rgba(129, 140, 248, 0.22);
+}
+
+/* ----- TEMA: Carbon (hitam netral + aksen amber) ----- */
+body[data-theme="carbon"] {
+  --bg: #131316; --bg-deep: #0a0a0c;
+  --card: #17171b; --card-2: #232329;
+  --border: #232329; --border-2: #3a3a43;
+  --text: #f2f2f4; --text-dim: #a1a1ac; --text-mute: #6e6e78;
+  --panel-grad-a: #17171b; --panel-grad-b: #100f12;
+  --header-bg: rgba(19, 19, 22, 0.96);
+  --scroll-track: #0a0a0c; --scroll-thumb: #33333b; --scroll-thumb-hover: #4a4a55;
+  --accent: #fbbf24; --accent-soft: rgba(251, 191, 36, 0.20);
+}
+
+/* ----- TEMA: Nordic Light (terang, low-glare untuk ruangan terang) ----- */
+body[data-theme="light"] {
+  --bg: #eef2f7; --bg-deep: #e2e8f0;
+  --card: #ffffff; --card-2: #f1f5f9;
+  --border: #d8e0ea; --border-2: #c2cddb;
+  --text: #0f172a; --text-dim: #475569; --text-mute: #7b8a9e;
+  --panel-grad-a: #ffffff; --panel-grad-b: #f6f9fc;
+  --header-bg: rgba(255, 255, 255, 0.94);
+  --scroll-track: #dbe3ec; --scroll-thumb: #b6c2d1; --scroll-thumb-hover: #98a7ba;
+  --hover-row: rgba(14, 165, 233, 0.10);
+  --shadow: rgba(15, 23, 42, 0.10);
+  --accent: #0284c7; --accent-soft: rgba(2, 132, 199, 0.16);
+}
+
+/* ----- TEMA: Forest (hijau tua + aksen lime) ----- */
+body[data-theme="forest"] {
+  --bg: #0c1a15; --bg-deep: #06110d;
+  --card: #10231c; --card-2: #17332a;
+  --border: #17332a; --border-2: #2a5140;
+  --text: #e6f5ee; --text-dim: #9dc4b3; --text-mute: #6a8f7d;
+  --panel-grad-a: #10231c; --panel-grad-b: #0a170f;
+  --header-bg: rgba(12, 26, 21, 0.96);
+  --scroll-track: #06110d; --scroll-thumb: #24463a; --scroll-thumb-hover: #356554;
+  --accent: #84cc16; --accent-soft: rgba(132, 204, 22, 0.20);
+}
+
+/* =========================================================================
+ * TEMA ELEGAN — palet refined: kontras lembut, aksen tasteful,
+ * gradien halus, dan nuansa premium.
+ * ========================================================================= */
+
+/* ----- TEMA: Obsidian (hitam kebiruan matte + aksen champagne-gold) ----- */
+body[data-theme="obsidian"] {
+  --bg: #0c0e13; --bg-deep: #06070a;
+  --card: #12151c; --card-2: #1a1f29;
+  --border: #1c2129; --border-2: #2b323f;
+  --text: #eceff4; --text-dim: #98a2b3; --text-mute: #646d7c;
+  --panel-grad-a: #12151c; --panel-grad-b: #0b0d12;
+  --header-bg: rgba(12, 14, 19, 0.94);
+  --scroll-track: #06070a; --scroll-thumb: #262c38; --scroll-thumb-hover: #3a4251;
+  --hover-row: rgba(214, 179, 106, 0.08);
+  --shadow: rgba(0, 0, 0, 0.45);
+  --accent: #d6b36a; --accent-soft: rgba(214, 179, 106, 0.20);
+}
+
+/* ----- TEMA: Sapphire (biru royal + aksen sky cerah) ----- */
+body[data-theme="sapphire"] {
+  --bg: #0a1226; --bg-deep: #050a18;
+  --card: #0f1a33; --card-2: #16233f;
+  --border: #16233f; --border-2: #29406b;
+  --text: #e9f0ff; --text-dim: #9bb0d4; --text-mute: #5f7aa6;
+  --panel-grad-a: #0f1a33; --panel-grad-b: #091026;
+  --header-bg: rgba(10, 18, 38, 0.95);
+  --scroll-track: #050a18; --scroll-thumb: #22375c; --scroll-thumb-hover: #34517f;
+  --hover-row: rgba(56, 189, 248, 0.09);
+  --shadow: rgba(0, 0, 0, 0.38);
+  --accent: #38bdf8; --accent-soft: rgba(56, 189, 248, 0.20);
+}
+
+/* ----- TEMA: Plum Noir (ungu gelap elegan + aksen rose) ----- */
+body[data-theme="plum"] {
+  --bg: #150f1e; --bg-deep: #0b0711;
+  --card: #1c1428; --card-2: #271b38;
+  --border: #261a37; --border-2: #3d2a55;
+  --text: #f0eaf8; --text-dim: #b0a0c8; --text-mute: #7a6a92;
+  --panel-grad-a: #1c1428; --panel-grad-b: #120c1b;
+  --header-bg: rgba(21, 15, 30, 0.95);
+  --scroll-track: #0b0711; --scroll-thumb: #382852; --scroll-thumb-hover: #503a72;
+  --hover-row: rgba(244, 114, 182, 0.09);
+  --shadow: rgba(0, 0, 0, 0.42);
+  --accent: #f472b6; --accent-soft: rgba(244, 114, 182, 0.20);
+}
+
+/* ----- TEMA: Porcelain (terang bersih ala Linear/Apple + aksen indigo) ----- */
+body[data-theme="porcelain"] {
+  --bg: #fafbfc; --bg-deep: #f1f3f6;
+  --card: #ffffff; --card-2: #f4f6f9;
+  --border: #e6e9ee; --border-2: #d5dae2;
+  --text: #14161c; --text-dim: #4a5262; --text-mute: #7f8898;
+  --panel-grad-a: #ffffff; --panel-grad-b: #fafbfd;
+  --header-bg: rgba(255, 255, 255, 0.92);
+  --scroll-track: #e9ecf1; --scroll-thumb: #c4cad4; --scroll-thumb-hover: #a4abb8;
+  --hover-row: rgba(99, 102, 241, 0.08);
+  --shadow: rgba(15, 23, 42, 0.08);
+  --accent: #6366f1; --accent-soft: rgba(99, 102, 241, 0.16);
+}
+
+/* Halo glow lebih halus saat hover kartu pada tema elegan. */
+body[data-theme="obsidian"] .kpi-card,
+body[data-theme="sapphire"] .kpi-card,
+body[data-theme="plum"] .kpi-card { border-color: var(--border-2); }
+body[data-theme="obsidian"] .kpi-card .glow,
+body[data-theme="sapphire"] .kpi-card .glow,
+body[data-theme="plum"] .kpi-card .glow { opacity: .22; filter: blur(18px); }
+
+/* Penyesuaian tema terang: teks putih-muda digelapkan agar kontras. */
+body[data-theme="porcelain"] .kpi-foot strong,
+body[data-theme="porcelain"] .kv-table td:last-child,
+body[data-theme="porcelain"] .cross-modal-stat .cms-v,
+body[data-theme="porcelain"] .corr-param,
+body[data-theme="porcelain"] .tl-label,
+body[data-theme="porcelain"] table.param-matrix thead th.unit-col .u-serial,
+body[data-theme="porcelain"] table.param-matrix td.param-name .p-label { color: #14161c; }
+body[data-theme="porcelain"] .anomaly-body strong,
+body[data-theme="porcelain"] .unit-bar-serial,
+body[data-theme="porcelain"] .top-unit,
+body[data-theme="porcelain"] .top-score .score-num,
+body[data-theme="porcelain"] table.param-matrix .rank-cell { color: #1e2230; }
+body[data-theme="porcelain"] .btn-ghost:hover,
+body[data-theme="porcelain"] .modal-close:hover,
+body[data-theme="porcelain"] .tab-btn:hover,
+body[data-theme="porcelain"] .subtab-btn:hover { background: var(--card-2); color: #14161c; }
+body[data-theme="porcelain"] .heatmap-table td { color: #14161c; }
+body[data-theme="porcelain"] .heatmap-table td[style*="color:#334155"],
+body[data-theme="porcelain"] .heatmap-table td[style*="color:#64748b"] { color: #94a3b8 !important; }
+body[data-theme="porcelain"] .dropzone { background: rgba(244, 246, 249, 0.8); }
+body[data-theme="porcelain"] .toast { color: #14161c; }
+
+/* ---- Penyesuaian khusus tema TERANG: teks yang defaultnya putih muda
+   perlu digelapkan agar kontras di atas latar putih. ---- */
+body[data-theme="light"] .kpi-foot strong,
+body[data-theme="light"] .kv-table td:last-child,
+body[data-theme="light"] .cross-modal-stat .cms-v,
+body[data-theme="light"] .corr-param,
+body[data-theme="light"] .tl-label,
+body[data-theme="light"] table.param-matrix thead th.unit-col .u-serial,
+body[data-theme="light"] table.param-matrix td.param-name .p-label { color: #0f172a; }
+body[data-theme="light"] .anomaly-body strong,
+body[data-theme="light"] .unit-bar-serial,
+body[data-theme="light"] .top-unit,
+body[data-theme="light"] .top-score .score-num,
+body[data-theme="light"] table.param-matrix .rank-cell { color: #1e293b; }
+body[data-theme="light"] .btn-ghost:hover,
+body[data-theme="light"] .modal-close:hover,
+body[data-theme="light"] .tab-btn:hover,
+body[data-theme="light"] .subtab-btn:hover { background: var(--card-2); color: #0f172a; }
+body[data-theme="light"] .heatmap-table td { color: #0f172a; }
+body[data-theme="light"] .heatmap-table td[style*="color:#334155"],
+body[data-theme="light"] .heatmap-table td[style*="color:#64748b"] { color: #94a3b8 !important; }
+body[data-theme="light"] .dropzone { background: rgba(241, 245, 249, 0.7); }
+body[data-theme="light"] .toast { color: #0f172a; }
+
+
+
+html, body {
+  height: 100%;
+}
+body {
+  font-family: 'Inter', 'Segoe UI', system-ui, -apple-system, sans-serif;
+  background: var(--bg-deep);
+  color: var(--text);
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  font-size: 14px;
+  -webkit-font-smoothing: antialiased;
+}
+
+.mono { font-family: 'JetBrains Mono', 'Consolas', 'Courier New', monospace; }
+.hidden { display: none !important; }
+
+/* ---------- Scrollbar ---------- */
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-track { background: var(--scroll-track); }
+::-webkit-scrollbar-thumb { background: var(--scroll-thumb); border-radius: 6px; }
+::-webkit-scrollbar-thumb:hover { background: var(--scroll-thumb-hover); }
+
+/* ---------- Header ---------- */
+.app-header {
+  position: sticky; top: 0; z-index: 50;
+  background: var(--header-bg);
+  backdrop-filter: blur(8px);
+  border-bottom: 1px solid var(--border);
+  /* [REVISI #1] Rata kanan-kiri SELARAS dengan konten utama (.app-main):
+   * gunakan max-width + margin:auto + padding horizontal yang SAMA.
+   * (Sebelumnya memakai perhitungan 100vw yang keliru saat ada scrollbar
+   *  vertikal — 100vw termasuk lebar scrollbar sehingga header bergeser.) */
+  width: 100%;
+  max-width: var(--content-max);
+  margin: 0 auto;
+  padding: 12px var(--content-pad);
+  display: flex; flex-wrap: wrap; justify-content: space-between;
+  align-items: center; gap: 16px;
+}
+.header-left { display: flex; align-items: center; gap: 14px; }
+.header-title { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.header-title h1 { font-size: 18px; font-weight: 700; letter-spacing: .3px; }
+.header-model { font-size: 18px; font-weight: 700; letter-spacing: .3px; color: var(--text); }
+.chip {
+  font-size: 11px; padding: 3px 10px; border-radius: 6px;
+  background: var(--card-2); border: 1px solid var(--border-2);
+  color: var(--text-dim); font-family: 'Consolas', monospace;
+}
+.chip.online {
+  /* [P0 KONTRAS 2026-10-05] Latar SOLID, bukan rgba() semi-transparan.
+     Rasio teks/latar ~11.6:1 (WCAG AA butuh >= 4.5 utk teks kecil). */
+  background: #052e2b;
+  border-color: rgba(16, 185, 129, 0.55);
+  color: #99f6e4; display: inline-flex; align-items: center; gap: 6px; font-weight: 600;
+}
+.dot { width: 7px; height: 7px; border-radius: 50%; background: #34d399; animation: pulse 1.8s infinite; }
+@keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: .35; } }
+.header-sub { font-size: 11.5px; color: var(--text-mute); margin-top: 3px; }
+
+.header-right { display: flex; align-items: center; gap: 20px; flex-wrap: wrap; }
+.header-stat { text-align: right; }
+.header-stat .k { font-size: 10px; text-transform: uppercase; letter-spacing: .8px; color: var(--text-mute); }
+.header-stat .v { font-size: 17px; font-weight: 800; font-family: 'Consolas', monospace; color: #fbbf24; }
+.header-stat .v.warn  { color: var(--red); }
+.header-stat .v.ok    { color: var(--emerald); }
+.vsep { width: 1px; height: 30px; background: var(--border-2); }
+
+/* Mode "belum ada data": sembunyikan statistik header, fokus ke form upload. */
+.app-header.header-compact .header-stat,
+.app-header.header-compact .vsep { display: none; }
+.app-header.header-compact .header-stat#header-time-wrap { display: none !important; }
+.app-header.header-compact .chip#machine-family,
+.app-header.header-compact .chip#machine-sn,
+.app-header.header-compact .chip#machine-lambung,
+.app-header.header-compact .chip.online { display: none !important; }
+/* Subjudul "Engine: —" juga tidak relevan di halaman home/katalog. */
+.app-header.header-compact .header-sub { display: none !important; }
+
+/* ---------- Tombol ---------- */
+.btn {
+  display: inline-flex; align-items: center; gap: 8px;
+  padding: 8px 14px; border-radius: 9px; border: 1px solid transparent;
+  font-size: 12.5px; font-weight: 600; cursor: pointer;
+  transition: all .18s ease; font-family: inherit; white-space: nowrap;
+}
+/* [WCAG AA 2026-10-03] #0369a1 memberi rasio putih ~5.0 (sebelumnya --sky #0ea5e9 = 2.77) */
+.btn-primary { background: #0369a1; color: #fff; }
+.btn-primary:hover { background: #075985; }
+.btn-ghost { background: var(--card-2); color: var(--text-dim); border-color: var(--border-2); }
+.btn-ghost:hover { background: #334155; color: #fff; }
+.btn:disabled { opacity: .5; cursor: not-allowed; }
+
+/* ---------- Banner alert global ---------- */
+.alert-banner {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 14px; padding: 10px 24px;
+  background: rgba(127, 29, 29, 0.45);
+  border-bottom: 1px solid rgba(153, 27, 27, 0.6);
+  font-size: 12.5px; color: #fecaca; flex-wrap: wrap;
+}
+.alert-banner.ok {
+  background: rgba(6, 78, 59, 0.35);
+  border-bottom-color: rgba(6, 95, 70, 0.6);
+  color: #a7f3d0;
+}
+.alert-tag {
+  background: #dc2626; color: #fff; padding: 3px 8px; border-radius: 5px;
+  font-size: 10px; font-weight: 800; text-transform: uppercase; letter-spacing: .8px;
+}
+.alert-banner.ok .alert-tag { background: #059669; }
+.alert-banner a { color: inherit; }
+
+/* Banner yang bisa diklik (membuka modal rekomendasi) */
+.alert-banner.clickable { cursor: pointer; transition: background .16s, box-shadow .16s; }
+.alert-banner.clickable:hover { background: rgba(153, 27, 27, 0.6); box-shadow: inset 0 -2px 0 rgba(248,113,113,.4); }
+.alert-banner.clickable:focus-visible { outline: 2px solid #fca5a5; outline-offset: -2px; }
+.alert-banner .banner-cta {
+  display: inline-flex; align-items: center; gap: 6px;
+  background: rgba(255,255,255,.10); border: 1px solid rgba(255,255,255,.22);
+  color: inherit; padding: 6px 12px; border-radius: 8px; font-size: 11.5px; font-weight: 700;
+  white-space: nowrap;
+}
+.alert-banner.clickable:hover .banner-cta { background: rgba(255,255,255,.18); }
+
+/* [CLC] Banner Filter Umur Komponen — judul kiri, detail mengalir, bungkus rapi */
+.alert-banner.clc { justify-content: flex-start; align-items: baseline; gap: 8px 14px; }
+.alert-banner.clc .clc-title { display: inline-flex; align-items: baseline; gap: 7px; white-space: nowrap; }
+.alert-banner.clc .clc-detail {
+  flex: 1 1 320px; min-width: 0;
+  font-size: 11.5px; line-height: 1.6; opacity: .92;
+}
+.alert-banner.clc .clc-detail .clc-sep { opacity: .45; margin: 0 2px; }
+
+/* ---------- Modal (overlay) ---------- */
+.modal-overlay {
+  position: fixed; inset: 0; z-index: 200;
+  background: rgba(2, 6, 23, .72); backdrop-filter: blur(3px);
+  display: flex; align-items: flex-start; justify-content: center;
+  padding: 48px 20px; overflow-y: auto;
+}
+.modal-panel {
+  width: 100%; max-width: 720px;
+  background: var(--card, #0f172a); border: 1px solid var(--border-2, #334155);
+  border-radius: 16px; box-shadow: 0 24px 64px rgba(0,0,0,.55);
+  display: flex; flex-direction: column; max-height: calc(100vh - 96px);
+  animation: modalIn .18s ease-out;
+}
+@keyframes modalIn { from { opacity: 0; transform: translateY(-10px) scale(.99); } to { opacity: 1; transform: none; } }
+.modal-head {
+  display: flex; align-items: flex-start; justify-content: space-between; gap: 12px;
+  padding: 16px 20px; border-bottom: 1px solid var(--border, #1e293b);
+}
+.modal-close {
+  background: transparent; border: 1px solid var(--border-2, #334155); color: #cbd5e1;
+  width: 34px; height: 34px; border-radius: 9px; cursor: pointer; font-size: 15px;
+  display: inline-flex; align-items: center; justify-content: center; transition: all .15s;
+}
+.modal-close:hover { background: var(--card-2, #1e293b); color: #fff; border-color: #475569; }
+.modal-body { padding: 16px 20px 20px; overflow-y: auto; }
+.modal-body .anomaly-list { display: flex; flex-direction: column; gap: 12px; }
+body.modal-open { overflow: hidden; }
+
+
+/* ---------- Layout utama ---------- */
+.app-main {
+  flex: 1; width: 100%; max-width: var(--content-max); margin: 0 auto;
+  /* [REVISI #1] Padding horizontal memakai token bersama dengan header agar
+   * konten rata kanan-kiri segaris dengan header. */
+  padding: 20px var(--content-pad);
+  display: flex; flex-direction: column; gap: 20px;
+}
+
+/* ---------- Toolbar / tab ---------- */
+.toolbar {
+  display: flex; flex-wrap: wrap; align-items: center;
+  justify-content: space-between; gap: 14px;
+  padding-bottom: 14px; border-bottom: 1px solid var(--border);
+}
+.tabs { display: flex; gap: 6px; background: rgba(15, 23, 42, .8); padding: 6px; border-radius: 13px; border: 1px solid var(--border); flex-wrap: wrap; }
+.tab-btn {
+  display: inline-flex; align-items: center; gap: 7px;
+  padding: 8px 14px; border-radius: 9px; border: none; cursor: pointer;
+  font-size: 12px; font-weight: 600; background: transparent; color: var(--text-dim);
+  font-family: inherit; transition: all .16s;
+}
+.tab-btn:hover { background: var(--card-2); color: #fff; }
+.tab-btn.active { background: #0369a1; color: #fff; box-shadow: 0 4px 14px rgba(2,105,161,.35); }
+
+.toolbar-right { display: flex; align-items: center; gap: 10px; font-size: 12px; color: var(--text-mute); }
+
+/* ---------- Sub-tab (di dalam halaman) ---------- */
+.subtab-bar {
+  display: flex; gap: 6px; padding: 6px;
+  background: rgba(15,23,42,.8); border: 1px solid var(--border);
+  border-radius: 13px; flex-wrap: wrap;
+}
+.subtab-btn {
+  display: inline-flex; align-items: center; gap: 8px;
+  padding: 9px 16px; border-radius: 9px; cursor: pointer;
+  /* [REVISI #9] Border transparan di semua state agar saat aktif (yang
+   * menambah border) TIDAK menggeser ukuran/layout tab. */
+  border: 1px solid transparent;
+  font-size: 12.5px; font-weight: 600; background: transparent; color: var(--text-dim);
+  font-family: inherit; transition: background .18s ease, color .18s ease, transform .12s ease, box-shadow .18s ease, border-color .18s ease;
+}
+.subtab-btn:hover { background: var(--card-2); color: #fff; transform: translateY(-1px); }
+/* [REVISI #9] Tab aktif dibuat LEBIH SOFT & INTERAKTIF.
+ * Sebelumnya solid ungu pekat (#8b5cf6) dengan teks putih — terlalu keras.
+ * Kini pakai TINT ungu transparan + border aksen + teks ungu terang, dengan
+ * glow halus dan efek tekan, sehingga terasa lembut namun tetap jelas aktif. */
+.subtab-btn.active {
+  background: color-mix(in srgb, var(--violet) 18%, transparent);
+  color: #c4b5fd;
+  border: 1px solid color-mix(in srgb, var(--violet) 45%, transparent);
+  box-shadow: 0 2px 12px color-mix(in srgb, var(--violet) 22%, transparent);
+}
+.subtab-btn.active:hover {
+  background: color-mix(in srgb, var(--violet) 26%, transparent);
+  color: #ddd6fe;
+  box-shadow: 0 3px 16px color-mix(in srgb, var(--violet) 32%, transparent);
+}
+.subtab-btn.active:active { transform: translateY(1px); box-shadow: 0 1px 6px color-mix(in srgb, var(--violet) 20%, transparent); }
+/* Fallback bila color-mix() tak didukung browser lama: tetap lembut (tint). */
+@supports not (background: color-mix(in srgb, red 50%, blue)) {
+  .subtab-btn.active { background: rgba(139, 92, 246, .18); border: 1px solid rgba(139, 92, 246, .45); color: #c4b5fd; }
+  .subtab-btn.active:hover { background: rgba(139, 92, 246, .26); color: #ddd6fe; }
+}
+
+/* ---------- Matrix perbandingan per parameter ---------- */
+table.param-matrix { min-width: max-content; }
+table.param-matrix thead th.unit-col { text-align: center; }
+table.param-matrix thead th.unit-col .u-serial { display: block; color: #e2e8f0; font-weight: 700; font-size: 11px; }
+table.param-matrix thead th.unit-col .u-serial.u-lambung { color: #34d399; }
+table.param-matrix thead th.unit-col .u-model { display: block; color: #64748b; font-weight: 500; font-size: 10px; letter-spacing: .4px; }
+table.param-matrix tbody td { font-family: 'JetBrains Mono', monospace; }
+table.param-matrix td.param-name { font-family: inherit; white-space: normal; min-width: 180px; }
+table.param-matrix td.param-name .p-label { color: #e2e8f0; font-weight: 600; font-size: 11.5px; }
+table.param-matrix td.param-name .p-meta { color: #64748b; font-size: 10px; display: block; margin-top: 2px; }
+table.param-matrix td.val-cell { text-align: center; font-weight: 700; }
+table.param-matrix td.val-cell.v-CRITICAL { color: #f87171; background: rgba(239,68,68,.10); }
+table.param-matrix td.val-cell.v-CAUTION,
+table.param-matrix td.val-cell.v-WARNING  { color: #fbbf24; background: rgba(245,158,11,.08); }
+table.param-matrix td.val-cell.v-NORMAL   { color: #e2e8f0; }
+table.param-matrix td.val-cell.v-NA       { color: #475569; }
+table.param-matrix td.val-cell .v-unit { color: #475569; font-weight: 500; font-size: 10px; margin-left: 3px; }
+table.param-matrix .pillar-row td {
+  background: rgba(2,6,23,.9); color: #94a3b8; font-family: inherit;
+  text-transform: uppercase; font-size: 10px; letter-spacing: .8px; font-weight: 700;
+  position: sticky; left: 0;
+}
+table.param-matrix .rank-cell { color: #fff; font-weight: 700; text-align: center; }
+table.param-matrix .best-worst { text-align: center; font-size: 10.5px; }
+table.param-matrix .best-worst .b { color: #34d399; font-weight: 700; }
+table.param-matrix .best-worst .w { color: #f87171; font-weight: 700; }
+/* --------- WCAG 2.4.7: Global focus indicator --------- */
+:where(a, button, input, select, textarea, [tabindex]:not([tabindex="-1"])):focus-visible {
+  outline: 2px solid var(--accent, #22d3ee);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+select:focus-visible, input:focus-visible { outline-offset: 1px; }
+
+select, input[type="text"], input[type="search"] {
+  background: #0b1220; border: 1px solid var(--border-2); color: var(--text);
+  border-radius: 8px; padding: 7px 11px; font-size: 12px; font-family: inherit;
+  outline: none; transition: border .15s;
+}
+select:focus, input:focus { border-color: var(--sky); }
+
+/* ---------- Kartu KPI kompartemen ---------- */
+.kpi-grid {
+  display: grid; gap: 14px;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+}
+@media (max-width: 1400px) { .kpi-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+@media (max-width: 860px)  { .kpi-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 560px)  { .kpi-grid { grid-template-columns: 1fr; } }
+
+.kpi-card {
+  position: relative; overflow: hidden;
+  background: linear-gradient(180deg, var(--panel-grad-a), var(--panel-grad-b));
+  border: 1px solid var(--border);
+  border-radius: 14px; padding: 15px;
+  transition: transform .18s, border-color .18s;
+}
+.kpi-card:hover { transform: translateY(-2px); }
+.kpi-card .glow {
+  position: absolute; top: -30px; right: -30px; width: 90px; height: 90px;
+  border-radius: 50%; opacity: .16; filter: blur(14px); pointer-events: none;
+}
+.kpi-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; margin-bottom: 8px; }
+.kpi-title { font-size: 10.5px; text-transform: uppercase; letter-spacing: .9px; color: var(--text-mute); font-weight: 600; }
+.kpi-icon { font-size: 15px; opacity: .85; }
+.kpi-label { font-size: 11.5px; color: var(--text-dim); }
+.kpi-value { display: flex; align-items: baseline; gap: 6px; margin-top: 2px; }
+.kpi-value .num { font-size: 26px; font-weight: 800; font-family: 'Consolas', monospace; line-height: 1.1; }
+.kpi-value .unit { font-size: 11px; color: var(--text-dim); }
+.kpi-note { font-size: 11px; margin-top: 6px; color: var(--text-mute); }
+.kpi-window-tag {
+  display: inline-flex; align-items: center; gap: 4px; margin-right: 8px;
+  font-size: 11px; font-weight: 700; color: #7dd3fc;
+  background: rgba(56,189,248,.10); border: 1px solid rgba(56,189,248,.28);
+  border-radius: 999px; padding: 1px 7px; vertical-align: middle;
+}
+.kpi-window-tag i { font-size: 11px; }
+.kpi-foot {
+  margin-top: 12px; padding-top: 9px; border-top: 1px solid rgba(30,41,59,.85);
+  display: flex; justify-content: space-between; font-size: 10.8px; color: var(--text-mute);
+}
+.kpi-foot strong { color: #e2e8f0; font-weight: 600; }
+
+/* Aksen warna status */
+.accent-red    .num, .accent-red    .kpi-icon { color: var(--red); }
+.accent-amber  .num, .accent-amber  .kpi-icon { color: var(--amber); }
+.accent-emerald .num, .accent-emerald .kpi-icon { color: var(--emerald); }
+.accent-sky    .num, .accent-sky    .kpi-icon { color: var(--sky); }
+.accent-cyan   .num, .accent-cyan   .kpi-icon { color: var(--cyan); }
+.accent-violet .num, .accent-violet .kpi-icon { color: var(--violet); }
+.accent-red .glow    { background: var(--red); }
+.accent-amber .glow  { background: var(--amber); }
+.accent-emerald .glow{ background: var(--emerald); }
+.accent-sky .glow    { background: var(--sky); }
+.accent-cyan .glow   { background: var(--cyan); }
+.accent-violet .glow { background: var(--violet); }
+
+/* Badge status */
+.badge {
+  font-size: 11px; font-weight: 800; letter-spacing: .3px;
+  padding: 3px 7px; border-radius: 5px;
+}
+/* [WCAG AA KONTRAS 2026-10-03] Teks gelap di atas latar gelap pekat agar rasio ≥8.5.
+   Kompatibel dengan sistem ranking/severity prioritas. */
+.badge.NORMAL   { background: #064e3b; color: #d1fae5; border: 1px solid rgba(209,250,229,.35); }
+.badge.CAUTION,
+.badge.WARNING  { background: #78350f; color: #fef3c7; border: 1px solid rgba(254,243,199,.4); }
+.badge.CRITICAL { background: #7f1d1d; color: #fee2e2; border: 1px solid rgba(254,226,226,.4); }
+.badge.INFO     { background: #0c4a6e; color: #bae6fd; border: 1px solid rgba(186,230,253,.35); }
+
+/* Badge prioritas katalog (P1 Critical → P3 Normal) */
+.sev-badge {
+  display: inline-block; min-width: 30px; text-align: center;
+  font-size: 11px; font-weight: 800; letter-spacing: .5px;
+  padding: 3px 7px; border-radius: 6px; cursor: default;
+}
+/* [WCAG AA KONTRAS 2026-10-03] Teks terang di atas latar gelap pekat, rasio ≥8.5.
+   MONITOR/WARNING = alias CAUTION; EXTREME = alias CRITICAL (kompatibilitas lama). */
+.sev-badge.sev-CRITICAL,
+.sev-badge.sev-EXTREME  { background: #7f1d1d; color: #fee2e2; border: 1px solid rgba(254,226,226,.45); }
+.sev-badge.sev-CAUTION,
+.sev-badge.sev-MONITOR,
+.sev-badge.sev-WARNING  { background: #78350f; color: #fef3c7; border: 1px solid rgba(254,243,199,.45); }
+.sev-badge.sev-NORMAL   { background: #064e3b; color: #d1fae5; border: 1px solid rgba(209,250,229,.35); }
+
+/* ---------- Grid chart & panel ---------- */
+.content-grid { display: grid; grid-template-columns: 8fr 4fr; gap: 20px; }
+/* Grid sejajar tinggi: item meregang setinggi baris → garis horisontal presisi. */
+.content-grid.align-stretch { align-items: stretch; }
+@media (max-width: 1100px) { .content-grid { grid-template-columns: 1fr; } }
+
+.panel {
+  background: linear-gradient(180deg, var(--panel-grad-a), var(--panel-grad-b));
+  border: 1px solid var(--border); border-radius: 16px;
+  padding: 18px; box-shadow: 0 8px 30px var(--shadow);
+}
+.panel + .panel { margin-top: 18px; }
+/* Panel yang bersebelahan di dalam grid TIDAK boleh dapat margin-top dari
+   rule .panel + .panel (mereka kolom, bukan bertumpuk) — agar garis atas &
+   bawah antar-kolom presisi. */
+.content-grid > .panel + .panel { margin-top: 0; }
+.two-col > .panel + .panel { margin-top: 0; }
+.panel-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; margin-bottom: 14px; flex-wrap: wrap; }
+.panel-title { font-size: 14px; font-weight: 700; display: flex; align-items: center; gap: 8px; }
+.panel-sub { font-size: 11.5px; color: var(--text-mute); margin-top: 3px; }
+
+/* Panel yang tinggi-nya disamakan dgn panel chart di kolom kiri (via JS).
+   Isi di dalamnya "mengisi" sisa ruang & bisa scroll agar tak ada celah. */
+.panel.panel-fill { display: flex; flex-direction: column; overflow: hidden; }
+/* Kolom insight: kolom kanan. */
+.insights-col { display: flex; flex-direction: column; }
+/* Area chart yang mengisi sisa tinggi panel (donut pilar). */
+.chart-wrap.chart-fill { flex: 1 1 auto; height: auto; min-height: 220px; }
+/* Donut pilar: batasi ukuran agar proporsional & terpusat di panel yang tinggi. */
+.chart-wrap.chart-fill canvas { max-width: 360px !important; max-height: 360px !important; margin: 0 auto; }
+/* Cross Analysis: Scatter & Radar memakai chart-fill TANPA batas 360px, dan
+   dipaksa mengisi lebar container (Chart.js kadang menyisakan inline width
+   kecil bila dirender saat panel belum berukuran penuh). */
+#cross-scatter-chart, #cross-radar-chart {
+  max-width: none !important; max-height: none !important;
+  width: 100% !important;
+}
+/* Radar: isi tinggi panel penuh agar ukuran spider web maksimal */
+#cross-radar-chart {
+  height: 480px !important;
+  max-height: 520px !important;
+}
+#cross-timeline-chart { max-width: none !important; width: 100% !important; }
+/* Daftar anomali yang mengisi sisa tinggi panel (Predictive Diagnostic AI). */
+.anomaly-list.list-fill { flex: 1 1 auto; max-height: none; min-height: 0; overflow-y: auto; }
+
+/* Kolom chart dinamis: jarak antar-panel (panel pertama rata atas). */
+#charts-dynamic { display: flex; flex-direction: column; gap: 18px; }
+/* [REVISI 2026-10-03] Tiap grup chart = 1 baris grid 2 kolom:
+   kiri = chart (tinggi PROPORSIONAL tetap), kanan = panel Predictive Diagnostic.
+   align-items: start => chart TIDAK ikut melar mengikuti panjang narasi
+   diagnostik; panel diagnostik punya tinggi tetap + scroll internal sendiri. */
+.chart-group-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 18px;
+  align-items: start;
+}
+/* Tinggi bersama: chart & panel diagnostik di baris yang sama dibuat SAMA
+   agar garis atas & bawah presisi, sementara isi diagnostik bergulir sendiri. */
+.chart-group-row { --group-row-h: 460px; }
+.chart-group-row > .chart-panel { height: var(--group-row-h); display: flex; flex-direction: column; }
+.chart-group-row > .chart-panel .chart-wrap { flex: 1 1 auto; height: auto; min-height: 240px; }
+.chart-group-row > .group-diagnostic { height: var(--group-row-h); }
+@media (max-width: 1100px) {
+  .chart-group-row { grid-template-columns: 1fr; align-items: stretch; }
+  .chart-group-row > .chart-panel,
+  .chart-group-row > .group-diagnostic { height: auto; }
+}
+/* [REVISI 2026-10-03] Baris PASANGAN: dua chart berdampingan (Productivity &
+   Power + Dozing Productivity), masing-masing selebar 50%. */
+.chart-pair-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 18px;
+  align-items: start;
+}
+.chart-pair-row > .panel + .panel { margin-top: 0; }
+.chart-pair-row > .chart-panel { height: var(--group-row-h, 460px); display: flex; flex-direction: column; }
+.chart-pair-row > .chart-panel .chart-wrap { flex: 1 1 auto; height: auto; min-height: 240px; }
+@media (max-width: 1100px) {
+  .chart-pair-row { grid-template-columns: 1fr; align-items: stretch; }
+  .chart-pair-row > .chart-panel { height: auto; }
+}
+/* Di dalam baris grup, kedua panel adalah kolom grid — jangan dapat margin-top
+   dari rule .panel + .panel agar garis atas chart & diagnostik presisi. */
+.chart-group-row > .panel + .panel { margin-top: 0; }
+/* Panel diagnostik per-grup: daftar anomali mengisi sisa tinggi & bergulir
+   internal bila narasi/event banyak. */
+.panel.group-diagnostic { min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
+.panel.group-diagnostic .anomaly-list {
+  flex: 1 1 auto; min-height: 0; max-height: none; overflow-y: auto;
+  padding-right: 4px;
+}
+/* Chart panel: jarak sudah diatur oleh gap #charts-dynamic — matikan margin
+   dari rule .panel + .panel agar tidak dobel (36px). */
+#charts-dynamic > .panel + .panel { margin-top: 0; }
+
+.legend { display: flex; flex-wrap: wrap; gap: 10px; font-size: 11px; }
+.legend span { display: inline-flex; align-items: center; gap: 5px; color: var(--text-dim); }
+.legend .swatch { width: 12px; height: 3px; border-radius: 2px; display: inline-block; }
+.legend .swatch.dot { width: 9px; height: 9px; border-radius: 50%; }
+.legend .chart-window-note { color: #38bdf8; background: rgba(56,189,248,.10); border: 1px solid rgba(56,189,248,.30); border-radius: 999px; padding: 2px 9px; font-size: 10.5px; font-weight: 600; }
+.legend .chart-window-note i { font-size: 10px; }
+.legend .chart-window-note.chart-full-note { color: #94a3b8; background: rgba(148,163,184,.10); border-color: rgba(148,163,184,.28); }
+
+.chart-wrap { position: relative; height: 280px; width: 100%; }
+.chart-wrap.tall { height: 300px; }
+
+/* ---------- Legend tombol (toggle series on/off) ---------- */
+.chart-legend { display: flex; flex-wrap: wrap; gap: 8px; margin: 2px 0 12px; }
+.chart-legend-btn {
+  display: inline-flex; align-items: center; gap: 6px;
+  background: transparent; border: 1px solid #334155;
+  color: var(--text-dim); font-size: 11px; font-weight: 600;
+  padding: 4px 10px; border-radius: 999px; cursor: pointer;
+  transition: background .15s ease, border-color .15s ease, color .15s ease, opacity .15s ease;
+}
+.chart-legend-btn:hover { border-color: var(--legend-color, #64748b); color: var(--text, #e2e8f0); }
+.chart-legend-btn .swatch {
+  width: 12px; height: 3px; border-radius: 2px; display: inline-block;
+  background: var(--legend-color, #94a3b8); transition: opacity .15s ease;
+}
+.chart-legend-btn .swatch.square { width: 9px; height: 9px; border-radius: 2px; }
+/* Aktif = series tampil (default); non-aktif = series disembunyikan */
+.chart-legend-btn.active { color: var(--text, #e2e8f0); border-color: var(--legend-color, #64748b); background: rgba(148,163,184,.14); background: color-mix(in srgb, var(--legend-color, #64748b) 14%, transparent); }
+.chart-legend-btn:not(.active) { opacity: .5; }
+.chart-legend-btn:not(.active) .swatch { opacity: .35; }
+.chart-legend-btn:focus-visible { outline: 2px solid var(--legend-color, #38bdf8); outline-offset: 2px; }
+
+/* ---------- Panel AI / anomali ---------- */
+.anomaly-list { display: flex; flex-direction: column; gap: 12px; max-height: 620px; overflow-y: auto; padding-right: 4px; }
+.anomaly-card { border-radius: 12px; padding: 13px; border: 1px solid; }
+.anomaly-card.CRITICAL { background: rgba(69,10,10,.35); border-color: rgba(153,27,27,.5); }
+.anomaly-card.CAUTION,
+.anomaly-card.WARNING  { background: rgba(69,26,3,.32);  border-color: rgba(180,83,9,.45); }
+/* Header kartu: judul di kiri, timestamp di kanan — rata atas agar rapi
+   baik saat judul satu baris maupun membungkus ke beberapa baris. */
+.anomaly-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; }
+.anomaly-title { font-size: 12px; font-weight: 700; display: flex; align-items: flex-start; gap: 7px; flex: 1 1 auto; min-width: 0; line-height: 1.35; }
+.anomaly-title i { margin-top: 1px; flex: 0 0 auto; }
+.anomaly-card.CRITICAL .anomaly-title { color: #f87171; }
+.anomaly-card.CAUTION  .anomaly-title,
+.anomaly-card.WARNING  .anomaly-title { color: #fbbf24; }
+/* Timestamp: tidak boleh menyusut/membungkus, sejajar baris pertama judul. */
+.anomaly-src { font-size: 10px; color: var(--text-mute); flex: 0 0 auto; white-space: nowrap; line-height: 1.35; }
+.anomaly-body { font-size: 11.5px; color: #cbd5e1; line-height: 1.6; margin-top: 8px; }
+.anomaly-body strong { color: #fff; }
+.action-box {
+  margin-top: 9px; background: rgba(2,6,23,.6); border: 1px solid var(--border);
+  border-radius: 9px; padding: 9px; font-size: 11px; color: #cbd5e1;
+}
+.action-box .h { font-weight: 700; color: #fbbf24; margin-bottom: 5px; }
+.action-box ul { list-style: none; padding-left: 0; }
+.action-box li { padding-left: 14px; position: relative; margin-bottom: 3px; }
+.action-box li::before { content: '›'; position: absolute; left: 4px; color: var(--sky); font-weight: 700; }
+
+.summary-line {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 9px 12px; border-radius: 10px; font-size: 11.5px; border: 1px solid;
+}
+.summary-line.ok  { background: rgba(6,78,59,.22); border-color: rgba(6,95,70,.4); color: #6ee7b7; }
+.summary-line.bad { background: rgba(69,10,10,.3); border-color: rgba(153,27,27,.4); color: #fca5a5; }
+
+/* ---------- Progress bar ---------- */
+.progress-row { margin-bottom: 12px; font-size: 11.5px; }
+.progress-row .top { display: flex; justify-content: space-between; color: #cbd5e1; margin-bottom: 5px; }
+.progress-track { width: 100%; height: 8px; background: var(--card-2); border-radius: 5px; overflow: hidden; }
+.progress-fill { height: 100%; border-radius: 5px; transition: width .5s ease; }
+
+/* ---------- Accessibility screen-reader-only text ---------- */
+.sr-only {
+  position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+  overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0;
+}
+
+/* ---------- Paginasi tabel (POST-5) ---------- */
+.table-pager {
+  display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap;
+  gap: 6px; padding: 10px 4px 2px; font-size: 11.5px; color: var(--text-dim);
+}
+.table-pager .tp-info { margin-right: auto; color: var(--text-mute); }
+.table-pager .tp-btn {
+  min-width: 30px; height: 30px; padding: 0 9px; border-radius: 7px; cursor: pointer;
+  background: var(--card-2); color: var(--text-dim); border: 1px solid var(--border-2);
+  font-size: 12px; font-family: inherit; transition: background .15s, border-color .15s;
+}
+.table-pager .tp-btn:hover:not(:disabled) { background: rgba(14,165,233,.18); color: #fff; }
+.table-pager .tp-btn.is-active { background: #0369a1; color: #fff; border-color: #0369a1; font-weight: 700; }
+.table-pager .tp-btn:disabled { opacity: .4; cursor: default; }
+
+/* Skip link — tampil saat difokus via keyboard */
+.skip-link {
+  position: absolute !important; top: -40px; left: 0 !important;
+  background: #22d3ee; color: #0f172a; padding: 10px; text-decoration: none;
+  z-index: 9999; border-radius: 0 0 4px 0; font-weight: 600;
+}
+.skip-link:focus { top: 0; }
+
+
+/* ---------- Tabel ---------- */
+.table-toolbar { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 14px; }
+.table-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; max-height: 640px; overflow-y: auto; }
+table.data { width: 100%; border-collapse: collapse; font-size: 11.5px; }
+.table-scroll > table.data { min-width: max-content; }
+
+/* --------- Mobile overflow prevention --------- */
+html, body { max-width: 100%; overflow-x: hidden; }
+
+@media (max-width: 640px) {
+  .toolbar-right { flex-wrap: wrap; width: 100%; }
+  table.data { font-size: 11px; }
+}
+
+/* --------- Touch target accessibility (≥40px pada perangkat sentuh) --------- */
+@media (pointer: coarse) {
+  .btn, .btn-sm, .btn-ghost, .filter-chip, input, select, [role="button"] {
+    min-height: 40px;
+    min-width: 40px;
+    padding: 10px 12px;
+  }
+}
+/* [REVISI #1-lanjutan] Header kolom boleh MEMBUNGKUS agar tabel mengisi
+   lebar panel (rata kanan-kiri) tanpa overflow horizontal; sebelumnya
+   `nowrap` memaksa lebar natural sehingga kolom kanan terpotong. */
+table.data thead th {
+  position: sticky; top: 0; z-index: 2;
+  background: #020617; color: var(--text-mute);
+  text-transform: uppercase; font-size: 11px; letter-spacing: .5px;
+  padding: 10px 10px; text-align: left; border-bottom: 1px solid var(--border-2);
+  white-space: normal;          /* boleh bungkus -> kolom bisa menyusut */
+  vertical-align: bottom;       /* header multi-baris rapi & sejajar dasar */
+  line-height: 1.25;
+}
+/* Judul kolom yang perlu satu baris tetap nowrap (mis. header sortable pendek). */
+table.data thead th.nowrap { white-space: nowrap; }
+table.data tbody td { padding: 9px 10px; border-bottom: 1px solid rgba(30,41,59,.7); white-space: nowrap; }
+/* Sel teks panjang (Perhatian Utama, Hipotesis) boleh membungkus agar tabel
+   tidak melebar; diberi penanda .wrap-text / kolom terakhir tabel korelasi. */
+table.data tbody td.wrap-text { white-space: normal; min-width: 180px; }
+/* [REVISI] PENTING: `table.data thead th` (spesifisitas lebih tinggi) menimpa
+   `.center`, sehingga header yang diberi class="center" tetap rata KIRI.
+   Aturan berikut memaksa header ikut perataan kolomnya (rata tengah/kanan)
+   agar HEADER sejajar dengan ISI kolom di SEMUA tabel (VHMS/SOS/Cross). */
+table.data thead th.center { text-align: center; }
+table.data thead th.right  { text-align: right; }
+
+/* [2026-10-05] Katalog Home dirapatkan: padding & font lebih kecil supaya
+   lebih banyak kolom muat tanpa scroll horizontal. */
+#fleet-area table.data { font-size: 11px; }
+#fleet-area table.data thead th { padding: 7px 5px; font-size: 10px; letter-spacing: .2px; }
+#fleet-area table.data tbody td { padding: 5px 5px; }
+#fleet-area table.data tbody td.wrap-text { min-width: 120px; white-space: normal; }
+#fleet-area .sev-badge { padding: 1px 6px; font-size: 10px; }
+#fleet-area .badge { padding: 1px 6px; font-size: 10px; }
+#fleet-area .btn-sm { padding: 3px 8px; font-size: 10px; }
+
+/* [2026-10-05] Historical Telemetry Data Log: muat penuh tanpa scroll kanan.
+   `min-width: max-content` (aturan umum .table-scroll) dimatikan supaya tabel
+   menyusut mengikuti lebar panel; satuan kolom turun ke baris ke-2. */
+#table-section .table-scroll > table.data { min-width: 0; width: 100%; table-layout: fixed; }
+#table-section table.data { font-size: 10.5px; }
+#table-section table.data thead th {
+  padding: 6px 4px; font-size: 9.5px; letter-spacing: 0; word-break: break-word;
+}
+#table-section table.data thead th span { display: block; opacity: .55; }
+#table-section table.data tbody td { padding: 4px 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#table-section table.data .badge { padding: 1px 5px; font-size: 9.5px; }
+/* Kolom 1 (Waktu Rekam) butuh ruang tetap; sisanya dibagi rata oleh fixed layout. */
+#table-section table.data thead th:first-child { width: 112px; }
+#table-section table.data thead th:last-child  { width: 64px; }
+
+/* ---------- Tabel "Ringkasan & Kesimpulan": filter kolom (gaya Excel) ---------- */
+/* Baris ke-2 thead menampung <input> filter per kolom. Header dua baris:
+   baris 1 = judul kolom, baris 2 = kotak filter. Seluruh thead tetap sticky
+   (top:0) sehingga ikut menempel saat tabel di-scroll. */
+.ovl-summary-table thead tr.ovl-head-row th {
+  padding: 8px 10px 4px;
+  position: sticky; top: 0; z-index: 3;
+  border-bottom: none;
+}
+.ovl-summary-table .ovl-th-label { display: inline-block; }
+.ovl-summary-table .ovl-filter-icon {
+  font-size: 11px; color: #475569; margin-left: 5px;
+  vertical-align: middle;
+}
+.ovl-summary-table thead tr.ovl-filter-row th {
+  padding: 0 6px 8px;
+  position: sticky; top: 0; z-index: 3;
+  background: #020617;
+  border-bottom: 1px solid var(--border-2);
+}
+/* Input filter kolom: kecil, netral, fokus biru. */
+.ovl-summary-table .ovl-col-filter {
+  width: 100%; min-width: 74px; box-sizing: border-box;
+  background: rgba(15,23,42,.9); color: #e2e8f0;
+  border: 1px solid #1e293b; border-radius: 6px;
+  padding: 4px 7px; font-size: 10.5px; font-family: inherit;
+  text-transform: none; letter-spacing: 0;
+  transition: border-color .15s, box-shadow .15s;
+}
+.ovl-summary-table .ovl-col-filter::placeholder { color: #475569; }
+.ovl-summary-table .ovl-col-filter:hover { border-color: #334155; }
+.ovl-summary-table .ovl-col-filter:focus {
+  outline: none; border-color: #22d3ee;
+  box-shadow: 0 0 0 2px rgba(34,211,238,.18);
+}
+/* Sembunyikan tombol "x" bawaan input[type=search] agar rapi (opsional). */
+.ovl-summary-table .ovl-col-filter::-webkit-search-cancel-button {
+  -webkit-appearance: none; appearance: none;
+}
+table.data tbody tr:hover { background: rgba(30,41,59,.4); }
+table.data tbody tr.row-CRITICAL { background: rgba(69,10,10,.28); box-shadow: inset 3px 0 0 var(--red); }
+table.data tbody tr.row-CAUTION,
+table.data tbody tr.row-WARNING  { background: rgba(69,26,3,.22);  box-shadow: inset 3px 0 0 var(--amber); }
+.center { text-align: center; }
+.right { text-align: right; }
+
+/* ---------- Dropzone ---------- */
+.dropzone {
+  border: 2px dashed var(--border-2); border-radius: 16px;
+  padding: 40px 24px; text-align: center; transition: all .2s;
+  background: rgba(15,23,42,.5); cursor: pointer;
+}
+.dropzone:hover, .dropzone.dragover {
+  border-color: var(--sky); background: rgba(14,165,233,.08);
+  transform: scale(1.005);
+}
+.dropzone .dz-icon { font-size: 40px; color: var(--sky); margin-bottom: 12px; opacity: .85; }
+.dropzone h3 { font-size: 15px; margin-bottom: 6px; }
+.dropzone p { font-size: 12px; color: var(--text-mute); margin-bottom: 16px; }
+
+/* ---------- Empty state ---------- */
+.empty-state { text-align: center; padding: 60px 20px; color: var(--text-mute); }
+.empty-state .icon { font-size: 48px; opacity: .35; margin-bottom: 14px; }
+
+/* ---------- Footer ---------- */
+.app-footer {
+  border-top: 1px solid var(--border); background: #0b1220;
+  padding: 14px 24px; font-size: 11px; color: var(--text-mute);
+  display: flex; flex-wrap: wrap; justify-content: space-between; gap: 10px;
+}
+
+/* ---------- Toast ---------- */
+.toast-wrap { position: fixed; top: 76px; right: 20px; z-index: 200; display: flex; flex-direction: column; gap: 10px; }
+.toast {
+  min-width: 260px; max-width: 380px; padding: 12px 15px; border-radius: 11px;
+  background: #1e293b; border: 1px solid var(--border-2); font-size: 12.5px;
+  box-shadow: 0 10px 30px rgba(0,0,0,.45); animation: slideIn .25s ease;
+  display: flex; gap: 10px; align-items: flex-start;
+}
+.toast.err { border-color: rgba(239,68,68,.5); background: rgba(69,10,10,.95); color: #fecaca; }
+.toast.ok  { border-color: rgba(16,185,129,.5); background: rgba(6,78,59,.95); color: #a7f3d0; }
+.toast.info{ border-color: rgba(14,165,233,.5); background: rgba(12,74,110,.95); color: #bae6fd; }
+@keyframes slideIn { from { transform: translateX(40px); opacity: 0; } to { transform: none; opacity: 1; } }
+
+/* ---------- Loading ---------- */
+.loading-overlay {
+  position: fixed; inset: 0; z-index: 300; display: grid; place-items: center;
+  background: rgba(2,6,23,.82); backdrop-filter: blur(4px);
+}
+.spinner {
+  width: 44px; height: 44px; border-radius: 50%;
+  border: 3px solid rgba(148,163,184,.25); border-top-color: var(--sky);
+  animation: spin .8s linear infinite; margin: 0 auto 14px;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+.loading-overlay p { font-size: 13px; color: var(--text-dim); }
+
+/* ---------- Misc ---------- */
+.kv-table { width: 100%; font-size: 11.5px; }
+.kv-table td { padding: 4px 0; }
+.kv-table td:first-child { color: var(--text-mute); width: 45%; }
+.kv-table td:last-child { color: #e2e8f0; font-weight: 600; text-align: right; }
+.two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+@media (max-width: 720px) { .two-col { grid-template-columns: 1fr; } }
+
+/* [REVISI 2026-10-03] Grid overview: Korelasi + Efisiensi BBM (kolom kiri)
+   berdampingan dengan Riwayat Degradasi (kolom kanan), masing-masing 50%.
+   align-items: stretch => kolom kanan (Riwayat Degradasi) tingginya mengikuti
+   total tinggi kolom kiri (Korelasi + Status Tenaga) agar sejajar. */
+.overview-degrad-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; align-items: stretch; }
+.overview-degrad-grid .degrad-col-left,
+.overview-degrad-grid .degrad-col-right { display: flex; flex-direction: column; min-width: 0; }
+.overview-degrad-grid .degrad-col-left > .panel,
+.overview-degrad-grid .degrad-col-right > .panel { margin-top: 0; }
+/* Panel Riwayat Degradasi mengisi penuh tinggi kolom kanan. */
+.overview-degrad-grid .degrad-col-right > #timeline-panel { flex: 1 1 auto; display: flex; flex-direction: column; }
+/* Daftar riwayat mengisi sisa tinggi panel & bergulir bila isinya panjang. */
+.overview-degrad-grid .degrad-col-right > #timeline-panel .tl-list {
+  flex: 1 1 auto; min-height: 0; overflow-y: auto; padding-right: 4px;
+}
+@media (max-width: 1100px) {
+  .overview-degrad-grid { grid-template-columns: 1fr; align-items: start; }
+  .overview-degrad-grid .degrad-col-right > #timeline-panel { flex: 0 0 auto; }
+}
+
+/* =========================================================================
+ * FLEET OVERVIEW
+ * ========================================================================= */
+
+/* Bar unit aktif di atas dashboard detail */
+.unit-bar {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 14px; flex-wrap: wrap;
+  padding: 10px 14px; border-radius: 12px;
+  background: linear-gradient(90deg, rgba(14,165,233,.12), rgba(15,23,42,.4));
+  border: 1px solid rgba(14,165,233,.3);
+}
+.unit-bar-info { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.unit-bar-label { font-size: 11px; text-transform: uppercase; letter-spacing: .8px; color: var(--text-mute); }
+.unit-bar-serial { font-family: 'Consolas', monospace; font-weight: 800; font-size: 15px; color: #fff; }
+
+/* Tombol ukuran kecil di tabel */
+.btn-sm { padding: 5px 11px; font-size: 11px; border-radius: 7px; }
+
+/* Baris tabel armada bisa diklik */
+.fleet-row { cursor: pointer; transition: background .12s; }
+.fleet-row:hover { background: var(--hover-row) !important; }
+
+/* Sel KPI di tabel armada */
+.kpi-cell { font-size: 11px; color: #cbd5e1; }
+
+/* Warna angka pada kartu status armada */
+.accent-sky .num    { color: var(--sky); }
+.accent-violet .num { color: var(--violet); }
+
+/* Sembunyikan label tombol di layar sempit */
+@media (max-width: 640px) { .hide-sm { display: none; } }
+
+/* Panel katalog sedikit lebih lega untuk tabel lebar */
+#fleet-area .table-scroll { max-height: 620px; }
+
+/* Badge status besar untuk bar unit */
+.unit-bar .badge { font-size: 11px; padding: 4px 10px; }
+/* [2026-10-03] Samakan rasio lebar & tinggi chip ONLINE dengan badge level (CRITICAL). */
+.unit-bar .chip.online { font-size: 11px; padding: 4px 10px; line-height: 1.2; border-radius: 5px; }
+
+/* =========================================================================
+ * UNIT COMPARISON
+ * ========================================================================= */
+
+.btn-cyan { background: var(--cyan); color: #042f2e; }
+.btn-cyan:hover { background: #22d3ee; }
+
+/* Daftar Top 10 */
+.top-list { display: flex; flex-direction: column; gap: 8px; }
+.top-item {
+  display: flex; align-items: center; gap: 14px;
+  padding: 11px 14px; border-radius: 11px; cursor: pointer;
+  background: rgba(15, 23, 42, .6); border: 1px solid var(--border);
+  transition: transform .15s, border-color .15s, background .15s;
+}
+.top-item:hover { transform: translateX(3px); border-color: var(--cyan); background: rgba(8,145,178,.1); }
+.top-item.medal-gold   { border-color: rgba(251,191,36,.55); background: rgba(120,53,15,.22); }
+.top-item.medal-silver { border-color: rgba(203,213,225,.4); background: rgba(51,65,85,.3); }
+.top-item.medal-bronze { border-color: rgba(217,119,6,.4); background: rgba(120,53,15,.14); }
+
+.top-rank {
+  flex-shrink: 0; width: 30px; height: 30px; border-radius: 9px;
+  display: grid; place-items: center; font-weight: 800; font-size: 13px;
+  background: var(--card-2); color: var(--text-dim); font-family: 'Consolas', monospace;
+}
+.medal-gold .top-rank   { background: rgba(251,191,36,.2); color: #fbbf24; }
+.medal-silver .top-rank { background: rgba(203,213,225,.15); color: #cbd5e1; }
+.medal-bronze .top-rank { background: rgba(217,119,6,.2); color: #fb923c; }
+
+.top-main { flex: 1; min-width: 0; }
+.top-unit { font-size: 12.5px; font-weight: 700; color: #fff; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.top-cause { font-size: 11px; color: var(--text-mute); margin-top: 2px; }
+.top-score { display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
+.top-score .score-num { font-family: 'Consolas', monospace; font-weight: 800; font-size: 17px; color: #fff; }
+
+/* Tag pilar */
+.pillar-tag {
+  font-size: 11px; font-weight: 800; letter-spacing: .5px;
+  padding: 2px 7px; border-radius: 5px; text-transform: uppercase;
+}
+.pillar-tag.p-engine    { background: rgba(239,68,68,.16); color: #f87171; }
+.pillar-tag.p-hydraulic { background: rgba(245,158,11,.16); color: #fbbf24; }
+.pillar-tag.p-cooling   { background: rgba(56,189,248,.16); color: #38bdf8; }
+.pillar-tag.p-economy   { background: rgba(34,197,94,.16); color: #4ade80; }
+.pillar-tag.p-other     { background: rgba(148,163,184,.16); color: #cbd5e1; }
+
+/* Baris tabel comparison */
+#comparison-body tr { cursor: pointer; }
+#comparison-body tr:hover { background: rgba(6,182,212,.08) !important; }
+.kv-table td:first-child { color: var(--text-mute); width: 45%; }
+.kv-table td:last-child { color: #e2e8f0; font-weight: 600; text-align: right; }
+.two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+@media (max-width: 720px) { .two-col { grid-template-columns: 1fr; } }
+
+/* ===== [POIN 5] Filter katalog: chip cepat + penanda filter aktif ===== */
+.filter-chip {
+  display: inline-flex; align-items: center; gap: 7px;
+  padding: 6px 12px; border-radius: 999px; cursor: pointer;
+  font-size: 11.5px; font-weight: 700;
+  /* [P0 KONTRAS 2026-10-05] Latar SOLID agar rasio teks/latar terukur & stabil
+     (rgba di atas panel gelap membuat rasio terkunci rendah). Kode severity
+     tetap terbaca lewat border + warna teks terang (semua >= 12:1). */
+  background: #0b1220;
+  border: 1px solid rgba(148,163,184,.42);
+  color: #e2e8f0;
+  transition: all .15s ease;
+}
+.filter-chip:hover { background: #16203a; border-color: rgba(148,163,184,.62); }
+.filter-chip .fc-count {
+  font-family: var(--font-mono, monospace);
+  font-size: 10.5px; padding: 1px 7px; border-radius: 999px;
+  background: #1e293b; color: #e2e8f0;
+}
+.filter-chip.is-critical { border-color: rgba(239,68,68,.75); color: #fecaca; font-weight: 700; }
+.filter-chip.is-warning  { border-color: rgba(245,158,11,.75); color: #fde68a; font-weight: 700; }
+.filter-chip.is-normal   { border-color: rgba(16,185,129,.75); color: #bbf7d0; font-weight: 700; }
+
+/* Keadaan aktif: diberi warna latar mencolok + cincin */
+.filter-chip.active {
+  background: #082f49;
+  border-color: #0ea5e9;
+  color: #e0f2fe;
+  box-shadow: 0 0 0 2px rgba(14,165,233,.45);
+}
+.filter-chip.is-critical.active { background: #450a0a; border-color: #ef4444; color: #fecaca; box-shadow: 0 0 0 2px rgba(239,68,68,.5); }
+.filter-chip.is-warning.active  { background: #451a03; border-color: #f59e0b; color: #fde68a; box-shadow: 0 0 0 2px rgba(245,158,11,.5); }
+.filter-chip.is-normal.active   { background: #052e16; border-color: #10b981; color: #bbf7d0; box-shadow: 0 0 0 2px rgba(16,185,129,.5); }
+
+/* Tag filter aktif */
+.active-filter-tag {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 4px 10px; border-radius: 999px;
+  font-size: 11px; font-weight: 600;
+  background: rgba(14,165,233,.15);
+  border: 1px dashed rgba(14,165,233,.5);
+  color: #7dd3fc;
+}
+.active-filter-tag .clear-x { cursor: pointer; color: #94a3b8; }
+.active-filter-tag .clear-x:hover { color: #f87171; }
+
+/* Dropdown filter saat aktif */
+select.filter-active {
+  border-color: #0ea5e9 !important;
+  box-shadow: 0 0 0 2px rgba(14,165,233,.25);
+  color: #e0f2fe;
+}
+
+/* ===== [POIN 2] Kotak pengetahuan offline di panel AI ===== */
+.likely-box, .action-box {
+  margin-top: 10px; border-radius: 8px; padding: 10px 12px;
+}
+.likely-box { background: rgba(56,189,248,.07); border: 1px solid rgba(56,189,248,.2); }
+.likely-box .h { font-size: 11px; font-weight: 700; color: #38bdf8; margin-bottom: 6px; text-transform: uppercase; letter-spacing: .5px; }
+.likely-box ul { margin: 0; padding-left: 16px; }
+.likely-box li { font-size: 11.5px; color: #cbd5e1; margin-bottom: 3px; }
+
+.escalate-box {
+  margin-top: 10px; border-radius: 8px; padding: 9px 12px;
+  background: rgba(239,68,68,.12); border-left: 3px solid #ef4444;
+  font-size: 11.5px; color: #fca5a5; font-weight: 600;
+}
+.refs-box {
+  margin-top: 9px; padding-top: 8px; border-top: 1px dashed rgba(148,163,184,.2);
+  font-size: 10.5px; color: #64748b; display: flex; gap: 7px; align-items: flex-start;
+}
+.refs-box i { color: #94a3b8; margin-top: 2px; }
+.refs-box span { color: #94a3b8; }
+
+/* ---------- Cross Analysis: heatmap sel terpilih & modal scatter ---------- */
+.heatmap-table td.cross-cell {
+  cursor: pointer;
+  transition: box-shadow .12s, outline-color .12s;
+  outline: 2px solid transparent;
+  outline-offset: -2px;
+}
+.heatmap-table td.cross-cell:hover {
+  outline-color: rgba(34, 211, 238, .8);
+}
+.heatmap-table td.cross-cell.is-selected {
+  outline-color: #22d3ee;
+  box-shadow: 0 0 0 2px rgba(34,211,238,.55) inset, 0 0 12px rgba(34,211,238,.45);
+}
+.cross-narrative {
+  padding: 14px 16px; border-radius: 12px;
+  background: rgba(30,41,59,.5); border: 1px solid rgba(51,65,85,.7);
+  font-size: 12.5px; color: #cbd5e1; line-height: 1.6;
+}
+.cross-narrative h4 {
+  font-size: 11px; text-transform: uppercase; letter-spacing: .7px;
+  color: #64748b; margin-bottom: 6px;
+}
+.cross-narrative .narr-verdict {
+  padding: 10px 12px; border-radius: 9px; margin: 10px 0;
+  font-weight: 600; font-size: 12.5px;
+}
+.cross-narrative .narr-verdict.strong-pos { background: rgba(34,197,94,.14); border-left: 3px solid #22c55e; color: #86efac; }
+.cross-narrative .narr-verdict.strong-neg { background: rgba(239,68,68,.14); border-left: 3px solid #ef4444; color: #fca5a5; }
+.cross-narrative .narr-verdict.mod-pos   { background: rgba(234,179,8,.14); border-left: 3px solid #eab308; color: #fde047; }
+.cross-narrative .narr-verdict.mod-neg   { background: rgba(234,179,8,.14); border-left: 3px solid #eab308; color: #fde047; }
+.cross-narrative .narr-verdict.weak      { background: rgba(100,116,139,.16); border-left: 3px solid #64748b; color: #cbd5e1; }
+.cross-narrative ul { margin: 8px 0 0 18px; }
+.cross-narrative ul li { margin-bottom: 4px; }
+.cross-modal-stat {
+  display: flex; align-items: center; gap: 9px; padding: 8px 12px;
+  background: rgba(30,41,59,.45); border: 1px solid rgba(51,65,85,.6); border-radius: 10px;
+}
+.cross-modal-stat .cms-k { font-size: 11px; text-transform: uppercase; letter-spacing: .5px; color: #64748b; }
+.cross-modal-stat .cms-v { font-size: 13px; font-weight: 700; color: #e2e8f0; }
+
+/* ---------- Cross Analysis: timeline multi-param SOS (checkbox chips) ---------- */
+.sos-multi-select { position: relative; }
+.sos-multi-select > summary {
+  list-style: none; cursor: pointer;
+  display: inline-flex; align-items: center; gap: 8px;
+  padding: 7px 12px; border-radius: 9px;
+  background: var(--card-2, #1e293b); border: 1px solid var(--border-2, #334155);
+  color: #cbd5e1; font-size: 11.5px;
+}
+.sos-multi-select > summary::-webkit-details-marker { display: none; }
+.sos-multi-select[open] > summary { border-color: #22d3ee55; color: #67e8f9; }
+.sos-multi-select .sms-count {
+  background: #22d3ee22; color: #67e8f9; border-radius: 6px;
+  padding: 1px 6px; font-size: 10px; font-weight: 700;
+}
+.sos-multi-select .sms-panel {
+  position: absolute; z-index: 60; top: calc(100% + 6px); left: 0;
+  min-width: 260px; max-height: 320px; overflow-y: auto;
+  background: var(--card, #0f172a); border: 1px solid var(--border-2, #334155);
+  border-radius: 12px; box-shadow: 0 16px 40px rgba(0,0,0,.5); padding: 8px;
+}
+.sos-multi-select .sms-group {
+  font-size: 11px; text-transform: uppercase; letter-spacing: .6px;
+  color: #64748b; padding: 8px 8px 4px;
+}
+.sos-multi-select label {
+  display: flex; align-items: center; gap: 8px; padding: 6px 8px;
+  border-radius: 7px; cursor: pointer; font-size: 11.5px; color: #cbd5e1;
+}
+.sos-multi-select label:hover { background: rgba(51,65,85,.5); }
+.sos-multi-select input { accent-color: #22d3ee; }
+
+
+.kb-tag {
+  font-size: 11px; font-weight: 700; letter-spacing: .4px;
+  padding: 1px 6px; border-radius: 999px; margin-left: 6px;
+  background: rgba(34,197,94,.16); color: #4ade80;
+  border: 1px solid rgba(34,197,94,.3); vertical-align: middle;
+}
+
+/* ---------- RUL (Remaining Useful Life) ---------- */
+.rul-box {
+  margin-top: 10px; border-radius: 8px; padding: 9px 12px;
+  font-size: 11.5px; font-weight: 600;
+  display: flex; align-items: center; gap: 8px;
+}
+.rul-box i { font-size: 13px; }
+.rul-critical { background: rgba(239,68,68,.12); border-left: 3px solid #ef4444; color: #fca5a5; }
+.rul-warning  { background: rgba(245,158,11,.12); border-left: 3px solid #f59e0b; color: #fcd34d; }
+.rul-normal   { background: rgba(16,185,129,.08); border-left: 3px solid #10b981; color: #6ee7b7; }
+.rul-safe     { background: rgba(16,185,129,.06); border-left: 3px solid #10b981; color: #6ee7b7; }
+.rul-conf { font-weight: 400; font-size: 10px; color: #94a3b8; }
+
+/* ---------- Heatmap ---------- */
+/* =========================================================================
+ * [REDESIGN 2026-10-03] HEATMAP — DARK FUTURISTIC (harmonis dgn tema aplikasi)
+ * -------------------------------------------------------------------------
+ * Gaya "data-grid" futuristik gelap: header bergradasi + garis aksen neon,
+ * sel heatmap bercahaya (glow) untuk Critical/Caution, hover glow, dan
+ * kedalaman (shadow) agar terasa premium & informatif.
+ * Mengikuti token tema (--card, --border-2, --accent) supaya cocok dengan
+ * tema default (slate) maupun tema lain (midnight/sapphire, dll.). */
+#heatmap-table, #sos-heatmap-table {
+  border-collapse: separate; border-spacing: 0;
+  font-variant-numeric: tabular-nums;
+  border-radius: 12px;
+}
+/* Bingkai panel heatmap: kaca gelap + glow aksen tipis. */
+#sos-heatmap-panel, #fleet-heatmap-panel {
+  position: relative;
+  background:
+    radial-gradient(1200px 200px at 0% 0%, var(--accent-soft, rgba(34,211,238,.10)), transparent 60%),
+    linear-gradient(180deg, var(--panel-grad-a, #0f172a), var(--panel-grad-b, #0b1220));
+  border: 1px solid var(--border-2, #334155);
+  border-radius: 16px;
+  padding: 16px;
+  box-shadow: 0 20px 60px var(--shadow, rgba(0,0,0,.35));
+}
+#sos-heatmap-panel::before, #fleet-heatmap-panel::before {
+  content: ""; position: absolute; inset: 0 0 auto 0; height: 3px;
+  border-radius: 16px 16px 0 0;
+  background: linear-gradient(90deg, transparent, var(--accent, #22d3ee), var(--violet, #8b5cf6), transparent);
+  opacity: .8;
+}
+
+/* --- Header tabel: gradasi + teks aksen --- */
+.heatmap-table th {
+  font-size: 10.5px; color: var(--text-dim, #94a3b8); padding: 9px 4px;
+  border-bottom: 1px solid var(--border-2, #334155); text-align: center;
+  letter-spacing: .5px; text-transform: uppercase; font-weight: 700;
+  vertical-align: middle;   /* rata tengah atas-bawah agar rapi antar kolom */
+}
+.heatmap-table th.th-label { text-align: left; }
+
+/* =========================================================================
+ * [FIX 2026-10-04] LAPISAN STICKY HEATMAP — satu skala, satu pemilik.
+ * -------------------------------------------------------------------------
+ * BUG: saat tabel di-scroll ke bawah, teks kompartemen (kolom label kiri)
+ * tampak MENEMBUS header parameter yang sticky di atas.
+ *
+ * Dua sebab yang menumpuk:
+ *  1. Spesifisitas. `table.data thead th` (0,1,3) MENGALAHKAN
+ *     `.heatmap-table thead th` (0,1,2), jadi header memakai z-index:2 —
+ *     lebih rendah dari sel label baris (z-index:3). Semua selektor lapisan
+ *     di bawah karena itu memakai `table.data.heatmap-table` agar menang.
+ *  2. z-index inline di JS (sos-render/vhms-render) menimpa apa pun dari CSS.
+ *     Inline tersebut sudah dihapus; stacking kini MILIK CSS saja.
+ *
+ * Skala lapisan (makin besar = makin depan):
+ *   1 = sel data biasa        3 = label baris sticky-kiri / kolom kanan
+ *   5 = baris header sticky-atas (harus > label baris)
+ *   7 = pojok kiri-atas (irisan header & label — harus paling depan)
+ * ===================================================================== */
+table.data.heatmap-table thead th {
+  position: sticky; top: 0; z-index: 5;
+  background: linear-gradient(180deg, var(--card-2, #1e293b), var(--card, #0f172a));
+  color: var(--text, #f1f5f9);
+  box-shadow: 0 2px 0 var(--accent, #22d3ee);
+}
+table.data.heatmap-table thead th.th-label {
+  left: 0; z-index: 7;
+  vertical-align: middle;   /* sejajar tengah dgn header parameter */
+  background: linear-gradient(180deg, var(--card-2, #1e293b), var(--card, #0f172a));
+}
+/* Kolom label baris (Kompartemen/Unit) sticky ke kiri. */
+table.data.heatmap-table tbody td.hm-label {
+  position: sticky; left: 0; z-index: 3;
+  background: var(--card, #0f172a);
+  max-width: 300px;
+}
+/* Kolom kanan (RUL/MPRS) sticky kanan. */
+table.data.heatmap-table thead th.hm-right-col {
+  position: sticky; right: 0; z-index: 7;
+}
+table.data.heatmap-table tbody td.hm-right-col {
+  position: sticky; right: 0; z-index: 3;
+  background: var(--card-2, #1e293b);
+}
+/* Header parameter — [REVISI 2026-10-03] TEKS MIRING (bottom-to-top):
+   simbol singkat, ditulis miring dimulai dari BAWAH ke ATAS.
+   Kemiringan default 25° (SOS). VHMS memakai 40° via modifier
+   `.th-param--slim` (kolom lebih sempit, hanya kata utama). */
+.heatmap-table th.th-param {
+  --hdr-tilt: -25deg;
+  --hdr-gap: 20px;   /* jarak teks dari garis bawah header (agar tak menyentuh) */
+  min-width: 42px; padding: 6px 0 6px 0; height: 132px;
+  position: sticky; top: 0;
+  vertical-align: bottom; text-align: right;
+  overflow: visible;
+}
+.heatmap-table th.th-param .th-param-txt {
+  position: absolute;
+  right: 6px; bottom: var(--hdr-gap);
+  display: inline-flex; flex-direction: column; align-items: flex-end;
+  gap: 1px; white-space: nowrap;
+  font-size: 10px; line-height: 1.25;
+  /* Miring dari bawah ke atas, RATA KANAN: pivot di KANAN-bawah agar semua
+     label sejajar pada sisi kanan & teks mulai dari bawah. */
+  transform: rotate(var(--hdr-tilt, -25deg));
+  transform-origin: bottom right;
+}
+.heatmap-table th.th-param .th-sym,
+.heatmap-table th.th-param .th-name { text-align: right; }
+.heatmap-table th.th-param .th-sym { font-size: 11px; font-weight: 800; letter-spacing: .3px; }
+.heatmap-table th.th-param .th-name {
+  font-size: 10px; font-weight: 600; color: var(--text-mute, #94a3b8);
+  text-transform: uppercase; letter-spacing: .3px;
+  /* Nama lengkap 1 baris (tanpa wrap) agar konsisten dgn orientasi miring. */
+  max-width: none; white-space: nowrap; overflow: visible; text-overflow: clip;
+  line-height: 1.15;
+}
+/* [REVISI 2026-10-03] VHMS — kolom sempit: hanya kata utama, teks VERTIKAL 90°.
+   Memakai `writing-mode` (BUKAN rotate absolut) agar teks menempati ruang
+   layout normal -> TIDAK terpotong & TIDAK menimpa garis bawah. Sel dibuat
+   rata tengah (kanan-kiri) sekaligus rata tengah (atas-bawah). */
+.heatmap-table th.th-param--slim {
+  --hdr-tilt: -90deg;
+  min-width: 26px; max-width: 34px;
+  vertical-align: middle; text-align: center;
+  padding: 10px 2px 14px 2px;   /* bawah lebih besar: jarak dari garis bawah */
+}
+.heatmap-table th.th-param--slim .th-param-txt {
+  position: static;             /* batalkan absolut dari aturan dasar */
+  left: auto; right: auto; bottom: auto;
+  display: inline-flex; align-items: center; justify-content: center;
+  margin: 0 auto;
+  /* Teks vertikal dibaca dari BAWAH ke ATAS. */
+  writing-mode: vertical-rl;
+  transform: rotate(180deg);
+  transform-origin: center center;
+  line-height: 1.1;
+}
+.heatmap-table th.th-param--slim .th-sym { text-align: center; letter-spacing: .2px; }
+.heatmap-table th.th-param--slim .th-name { display: none; }
+/* Garis aksen kiri pada header parameter (senada dgn label baris). */
+.heatmap-table th.th-param::before {
+  content: ""; position: absolute; left: 3px; top: 8px; bottom: 8px; width: 3px;
+  border-radius: 3px; background: var(--hdr-accent, transparent);
+  box-shadow: 0 0 8px var(--hdr-accent, transparent); opacity: .9;
+}
+.heatmap-table th.th-param { position: sticky; }
+
+/* =========================================================================
+ * [REVISI 2026-10-03] WARNA HEADER PARAMETER PER KATEGORI (anti mono-tone)
+ * -------------------------------------------------------------------------
+ * Label parameter (Fe, Cu, Al, Cr, ...) diberi warna berbeda sesuai
+ * KATEGORI/kompartemen, plus garis aksen & glow halus di dasar sel header —
+ * sehingga kolom terbaca cepat & tampak "hidup" tanpa mengorbankan keterbacaan.
+ *   SOS  : cluster  → wear, oil, clean, additive
+ *   VHMS : group    → engine, hydraulic, cooling, boost, exhaust, powertrain,
+ *                     power, greasing, fanpto, dozing
+ * Tiap kategori punya: warna teks + garis bawah (border-top sel) + glow. */
+.heatmap-table th.th-param.hm-cl-wear .th-sym,
+.heatmap-table th.th-param.hm-g-engine .th-sym,
+.heatmap-table th.th-param.hm-g-exhaust .th-sym { color: #fca5a5; }        /* merah  */
+.heatmap-table th.th-param.hm-cl-oil .th-sym,
+.heatmap-table th.th-param.hm-g-cooling .th-sym,
+.heatmap-table th.th-param.hm-g-fanpto .th-sym { color: #7dd3fc; }         /* biru   */
+.heatmap-table th.th-param.hm-cl-clean .th-sym,
+.heatmap-table th.th-param.hm-g-hydraulic .th-sym { color: #c4b5fd; }      /* violet */
+.heatmap-table th.th-param.hm-cl-additive .th-sym,
+.heatmap-table th.th-param.hm-g-power .th-sym,
+.heatmap-table th.th-param.hm-g-greasing .th-sym,
+.heatmap-table th.th-param.hm-g-dozing .th-sym { color: #6ee7b7; }         /* hijau  */
+.heatmap-table th.th-param.hm-g-boost .th-sym,
+.heatmap-table th.th-param.hm-g-powertrain .th-sym { color: #fcd34d; }     /* amber  */
+
+/* Warna aksen kiri header per kategori (dipakai oleh ::before). */
+.heatmap-table th.th-param.hm-cl-wear      { --hdr-accent: #ef4444; }
+.heatmap-table th.th-param.hm-cl-oil       { --hdr-accent: #38bdf8; }
+.heatmap-table th.th-param.hm-cl-clean     { --hdr-accent: #a78bfa; }
+.heatmap-table th.th-param.hm-cl-additive  { --hdr-accent: #10b981; }
+.heatmap-table th.th-param.hm-g-engine     { --hdr-accent: #ef4444; }
+.heatmap-table th.th-param.hm-g-exhaust    { --hdr-accent: #ef4444; }
+.heatmap-table th.th-param.hm-g-cooling    { --hdr-accent: #38bdf8; }
+.heatmap-table th.th-param.hm-g-fanpto     { --hdr-accent: #38bdf8; }
+.heatmap-table th.th-param.hm-g-hydraulic  { --hdr-accent: #a78bfa; }
+.heatmap-table th.th-param.hm-g-power      { --hdr-accent: #10b981; }
+.heatmap-table th.th-param.hm-g-greasing   { --hdr-accent: #10b981; }
+.heatmap-table th.th-param.hm-g-dozing     { --hdr-accent: #10b981; }
+.heatmap-table th.th-param.hm-g-boost      { --hdr-accent: #f59e0b; }
+.heatmap-table th.th-param.hm-g-powertrain { --hdr-accent: #f59e0b; }
+
+.hm-cell {
+  font-size: 10.5px; font-family: 'JetBrains Mono', monospace;
+  padding: 6px 4px !important; min-width: 48px;
+  transition: background .15s, box-shadow .15s, transform .1s;
+  border-right: 1px solid rgba(148,163,184,.06);
+  border-bottom: 1px solid rgba(148,163,184,.06);
+}
+/* Selang-seling baris (zebra) lembut dgn sedikit gemerlap. */
+.heatmap-table tbody tr:nth-child(even) td { background: rgba(148,163,184,.045); }
+.heatmap-table tbody tr:nth-child(even) td.hm-label { background: var(--card-2, #1e293b); }
+.heatmap-table tbody tr:hover td {
+  background: var(--hover-row, rgba(14,165,233,.08)) !important;
+  box-shadow: inset 0 0 0 1px var(--accent-soft, rgba(34,211,238,.2));
+}
+.heatmap-table tbody tr:hover td.hm-label { background: var(--card-2, #1e293b) !important; }
+/* Label baris. */
+.hm-label {
+  font-size: 11px; font-weight: 700; white-space: nowrap; text-align: left;
+  color: var(--text, #f1f5f9); border-right: 1px solid var(--border-2, #334155);
+  padding: 6px 12px 6px 12px !important;
+  /* [REDESIGN 2026-10-03] Aksen kiri berwarna per baris (severity) memakai
+     pseudo-element di bawah; di sini hanya siapkan ruang & posisi. */
+  position: relative;
+}
+.hm-label { position: relative; }
+/* [REDESIGN 2026-10-03] Akses kiri berwarna sesuai tingkat keparahan baris.
+   Warna diambil dari var --row-accent yang di-set per baris via JS, fallback
+   netral bila tak ada. Memberi penanda visual cepat tanpa mengganggu isi. */
+.hm-label::before {
+  content: ""; position: absolute; left: 0; top: 4px; bottom: 4px; width: 3px;
+  border-radius: 0 3px 3px 0;
+  background: var(--row-accent, transparent);
+  box-shadow: 0 0 8px var(--row-accent, transparent);
+}
+/* Label baris SOS/VHMS: badge tier + teks dua-baris. Asset ID tegas (putih),
+   nama kompartemen lebih kecil & berwarna agar hierarki jelas. */
+.hm-label .hm-tier {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 18px; height: 18px; border-radius: 5px; margin-right: 8px;
+  font-size: 11px; font-weight: 800; vertical-align: middle; flex-shrink: 0;
+}
+.hm-label .hm-label-txt { display: inline-flex; flex-direction: column; vertical-align: middle; line-height: 1.22; }
+.hm-label .hm-asset { color: var(--text, #f1f5f9); font-weight: 800; font-size: 11.5px; letter-spacing: .2px; }
+.hm-label .hm-comp  { color: #7dd3fc; font-weight: 700; font-size: 11px; letter-spacing: .4px; text-transform: uppercase; }
+/* Baris normal: nama kompartemen pakai warna netral agar tidak "teriak". */
+.hm-label .hm-comp.is-normal { color: var(--text-mute, #94a3b8); }
+/* [STANDARISASI 2026-10-03] 3 level — DARK NEON futuristic.
+   Latar transparan berwarna + teks menyala + garis bawah & glow aksen. */
+.hm-critical {
+  background: linear-gradient(180deg, rgba(239,68,68,.32), rgba(239,68,68,.18)) !important;
+  color: #fecaca !important; font-weight: 800;
+  box-shadow: inset 0 -2px 0 #ef4444, inset 0 0 18px rgba(239,68,68,.25);
+  text-shadow: 0 0 8px rgba(239,68,68,.55);
+}
+.hm-caution,
+.hm-warning {
+  background: linear-gradient(180deg, rgba(245,158,11,.30), rgba(245,158,11,.16)) !important;
+  color: #fde68a !important; font-weight: 800;
+  box-shadow: inset 0 -2px 0 #f59e0b, inset 0 0 18px rgba(245,158,11,.22);
+  text-shadow: 0 0 8px rgba(245,158,11,.45);
+}
+.hm-normal {
+  background: linear-gradient(180deg, rgba(16,185,129,.14), rgba(16,185,129,.06)) !important;
+  color: #6ee7b7 !important; font-weight: 700;
+}
+.hm-na { background: transparent !important; color: #475569 !important; }
+
+/* Legenda status di bawah filter — [REVISI 2026-10-03] tinggi DINAMIS:
+   mode SOS (teks singkat) tetap ringkas; mode VHMS (teks lebih panjang &
+   dapat membungkus ke baris baru) otomatis menambah tinggi. Gradasi memakai
+   warna aksen tema (cyan→violet) agar senada & bernilai seni. */
+.heatmap-legend {
+  display: flex; gap: 12px; align-items: center; flex-wrap: wrap;
+  margin: 2px 0 14px; padding: 8px 12px;
+  height: auto; min-height: 0;                     /* tinggi mengikuti konten */
+  border-radius: 12px;
+  background:
+    linear-gradient(135deg,
+      color-mix(in srgb, var(--accent, #22d3ee) 16%, transparent),
+      color-mix(in srgb, var(--violet, #8b5cf6) 12%, transparent));
+  border: 1px solid color-mix(in srgb, var(--accent, #22d3ee) 35%, transparent);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.04), 0 2px 12px rgba(0,0,0,.18);
+}
+/* Mode VHMS: legenda lebih lega (teks lebih panjang) — tinggi bertambah sendiri. */
+#fleet-heatmap-panel .heatmap-legend { line-height: 1.6; }
+.heatmap-legend .lg-item {
+  display: inline-flex; align-items: center; gap: 8px; font-size: 11px;
+  color: var(--text, #e2e8f0); font-weight: 600; letter-spacing: .2px;
+}
+.heatmap-legend .lg-swatch {
+  width: 16px; height: 16px; border-radius: 5px;
+  /* Cincin aksen tema agar swatch terlihat menyatu dengan gradasi legenda. */
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent, #22d3ee) 45%, transparent),
+              0 0 10px color-mix(in srgb, var(--accent, #22d3ee) 35%, transparent);
+}
+/* Swatch 3 level: gradasi diagonal dari terang → gelap + shimmer. */
+.heatmap-legend .lg-swatch.crit {
+  background: linear-gradient(135deg, #fca5a5, #ef4444 60%, #b91c1c);
+}
+.heatmap-legend .lg-swatch.caut {
+  background: linear-gradient(135deg, #fcd34d, #f59e0b 60%, #b45309);
+}
+.heatmap-legend .lg-swatch.norm {
+  background: linear-gradient(135deg, #6ee7b7, #10b981 60%, #047857);
+}
+/* Pisahkan label & nilai dlm item legenda biar rapi (label semi-terang). */
+.heatmap-legend .lg-item .lg-txt { opacity: .92; }
+
+/* [REVISI 2026-10-03] Panel "Keterangan Parameter" (simbol -> nama lengkap).
+   Header heatmap VHMS 90° hanya memuat simbol; nama lengkap ada di tooltip yg
+   tak terjangkau layar sentuh/keyboard. Panel ini fallback aksesibelnya.
+   Pakai <details>/<summary> native: toggle + keyboard + a11y tanpa JS. */
+.param-legend {
+  margin: -6px 0 14px; padding: 0;
+  border: 1px solid color-mix(in srgb, var(--accent, #22d3ee) 24%, transparent);
+  border-radius: 12px; background: rgba(15,23,42,.55);
+}
+.param-legend > summary {
+  cursor: pointer; padding: 8px 12px; font-size: 11px; font-weight: 700;
+  letter-spacing: .3px; color: var(--text, #e2e8f0); list-style: none;
+  display: flex; align-items: center; gap: 8px; border-radius: 12px;
+}
+.param-legend > summary::-webkit-details-marker { display: none; }
+.param-legend > summary::after {
+  content: '\25BE'; margin-left: auto; transition: transform .15s ease;
+}
+.param-legend[open] > summary::after { transform: rotate(180deg); }
+.param-legend-body {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+  gap: 6px 14px; padding: 4px 12px 12px;
+}
+.param-legend .pl-item {
+  display: flex; align-items: baseline; gap: 8px; font-size: 11px;
+  border-left: 3px solid var(--hdr-accent, #475569);
+  padding-left: 8px; line-height: 1.5;
+}
+.param-legend .pl-sym {
+  font-weight: 800; color: var(--hdr-accent, #e2e8f0); white-space: nowrap;
+}
+.param-legend .pl-name { color: var(--text, #e2e8f0); opacity: .88; }
+.param-legend .pl-unit { opacity: .65; }
+/* Warna aksen per kompartemen — selaras dengan garis aksen header heatmap. */
+.param-legend .pl-item.hm-g-engine,
+.param-legend .pl-item.hm-g-exhaust    { --hdr-accent: #ef4444; }
+.param-legend .pl-item.hm-g-cooling,
+.param-legend .pl-item.hm-g-fanpto     { --hdr-accent: #38bdf8; }
+.param-legend .pl-item.hm-g-hydraulic  { --hdr-accent: #a78bfa; }
+.param-legend .pl-item.hm-g-power,
+.param-legend .pl-item.hm-g-greasing,
+.param-legend .pl-item.hm-g-dozing     { --hdr-accent: #10b981; }
+
+/* =========================================================================
+ * [F-1 2026-10-04] Utility class — menggantikan inline style yang berulang
+ * (mis. cursor:pointer 18×, color status, teks kecil redup). Ditambahkan agar
+ * warna status & teks konsisten lintas modul dan lebih mudah di-theme.
+ * ========================================================================= */
+.u-pointer   { cursor: pointer; }
+.u-text-mute { color: var(--text-mute); }
+.u-text-dim  { color: var(--text-dim); }
+.u-text-ok   { color: #34d399; }
+.u-text-warn { color: #fbbf24; }
+.u-text-crit { color: #f87171; }
+
+/* =========================================================================
+ * Keyboard Focus Visibility — WCAG 2.4.7 (P0 FIX 2026-10-05)
+ * Memastikan semua kontrol interaktif punya indikator fokus yang terlihat
+ * saat navigasi keyboard (Tab, Shift+Tab).
+ * ========================================================================= */
+:where(a, button, input, select, textarea, [tabindex]):focus-visible {
+  outline: 2px solid var(--accent, #22d3ee);
+  outline-offset: 2px;
+  border-radius: 3px;
+}
+.u-text-sky  { color: #38bdf8; }
+.u-text-mute-xs { color: var(--text-mute); font-size: 10px; }
+.u-fs-11     { font-size: 11px; }
+.u-fs-12     { font-size: 12px; }
+
+/* =========================================================================
+ * [P2-3 PRA-PRODUCTION 2026-10-05] Font MINIMUM 11px di TAMPILAN LAYAR.
+ * Diukur pada data nyata: 112.532 elemen < 11px (mayoritas tabel laporan A4).
+ * Ukuran itu WAJAR di kertas (sudah dikalibrasi A4) tetapi terlalu kecil di
+ * layar. Aturan ini menaikkan LANTAI font HANYA saat `screen`; tata letak
+ * cetak (yang memakai @media print) TIDAK terpengaruh.
+ *
+ * Kertas pratinjau WYSIWYG A4 (`.rp-doc`) SENGAJA dikeluarkan dari selektor
+ * supaya kesetiaan pratinjau-cetak tetap terjaga.
+ * ========================================================================= */
+@media screen {
+  /* Elemen teks kecil di UI utama (bukan kertas cetak). Pembungkus
+     `.app-header`/`.app-main` + `!important` agar MENANG atas aturan
+     berbasis-id/kelas spesifik (mis. `#fleet-area table.data thead th {10px}`).
+     Hanya berlaku `screen`, jadi cetak A4 tidak tersentuh. */
+  .app-header small, .app-main small,
+  .app-header .u-text-mute-xs, .app-main .u-text-mute-xs,
+  .app-header .header-sub, .app-main .header-sub,
+  .app-header .chip, .app-main .chip,
+  .app-header .filter-chip, .app-main .filter-chip,
+  .app-header .fc-count, .app-main .fc-count,
+  .app-header .sev-badge, .app-main .sev-badge,
+  .app-header .kpi-title, .app-main .kpi-title,
+  .app-header .kpi-label, .app-main .kpi-label {
+    font-size: 11px !important;
+  }
+  /* Sel tabel data pada layar: naikkan ke 11px (header miring dikecualikan
+     agar tidak tumpang tindih). Kertas cetak `.rp-doc` dikecualikan. */
+  body:not(.printing-portfolio) .data td,
+  body:not(.printing-portfolio) .data th:not(.th-param):not(.th-label):not(.hm-label) {
+    font-size: 11px !important;
+  }
+  /* [2026-10-05 QA] Sisa elemen UI <11px yang belum tercakup di atas:
+     tombol kecil & badge di katalog Home (`#fleet-area ... {10px}`),
+     badge log telemetri (`#table-section ... {9.5px}`), dan 5 paragraf
+     petunjuk ber-`style="font-size:10.5px"` inline di index.html.
+     `!important` di stylesheet MENANG atas inline style non-important.
+     ponytail: selektor atribut mengikat literal inline; bila petunjuk
+     dipindah ke class (mis. `.panel-hint`), ganti selektor itu. */
+  .app-main .btn-sm:not(#portfolio-area *),
+  .app-main .badge:not(#portfolio-area *),
+  .app-main .sev-badge:not(#portfolio-area *),
+  .app-main p[style*="font-size:10.5px"] {
+    font-size: 11px !important;
+  }
+}
+.u-nowrap    { white-space: nowrap; }
+.param-legend .pl-item.hm-g-boost,
+.param-legend .pl-item.hm-g-powertrain { --hdr-accent: #f59e0b; }
+
+/* Searchable-select: tetap mengikuti gaya gelap aplikasi (sudah default).
+   Cukup pastikan tidak ada override terang di dalam panel heatmap. */
+#sos-heatmap-panel .ssel > input,
+#fleet-heatmap-panel .ssel > input {
+  background: var(--bg-deep, #020617); border: 1px solid var(--border-2, #334155); color: var(--text, #e2e8f0);
+}
+#sos-heatmap-panel .ssel > input:focus,
+#fleet-heatmap-panel .ssel > input:focus {
+  border-color: var(--accent, #22d3ee); box-shadow: 0 0 0 3px var(--accent-soft, rgba(34,211,238,.2));
+}
+#sos-heatmap-panel .ssel-list,
+#fleet-heatmap-panel .ssel-list {
+  background: var(--card, #0f172a); border: 1px solid var(--border-2, #334155);
+  box-shadow: 0 16px 40px rgba(0,0,0,.5);
+}
+
+#fleet-heatmap-panel .ssel-opt { color: var(--text); }
+#sos-heatmap-panel .ssel-opt:hover,
+#sos-heatmap-panel .ssel-opt.is-active,
+#fleet-heatmap-panel .ssel-opt:hover,
+#fleet-heatmap-panel .ssel-opt.is-active { background: rgba(14,165,233,.16); color: #fff; }
+#sos-heatmap-panel .ssel-opt.is-selected,
+#fleet-heatmap-panel .ssel-opt.is-selected { background: rgba(14,165,233,.22); color: #fff; }
+#sos-heatmap-panel .ssel-group,
+#fleet-heatmap-panel .ssel-group { color: #64748b; }
+#sos-heatmap-panel .ssel-empty,
+#fleet-heatmap-panel .ssel-empty { color: #64748b; }
+
+
+/* ---------- Searchable Select (filter Heatmap SOS/VHMS) ---------- */
+.ssel { position: relative; display: inline-block; min-width: 240px; }
+.ssel > input {
+  width: 100%; box-sizing: border-box;
+  background: #0b1220; border: 1px solid var(--border-2, #334155); color: var(--text, #e2e8f0);
+  border-radius: 8px; padding: 7px 30px 7px 11px; font-size: 12px; font-family: inherit;
+  transition: border-color .15s;
+}
+.ssel > input:focus { border-color: var(--sky, #0ea5e9); }
+.ssel > input::placeholder { color: #64748b; }
+/* Ikon kaca pembesar di kanan input */
+.ssel::after {
+  content: "\f002"; font-family: "Font Awesome 6 Free"; font-weight: 900;
+  position: absolute; right: 10px; top: 50%; transform: translateY(-50%);
+  color: #64748b; font-size: 11px; pointer-events: none;
+}
+.ssel-list {
+  position: absolute; left: 0; right: 0; top: calc(100% + 4px);
+  max-height: 280px; overflow-y: auto; z-index: 40;
+  background: #0b1220; border: 1px solid #334155; border-radius: 10px;
+  box-shadow: 0 12px 32px rgba(0,0,0,.45); padding: 4px;
+}
+.ssel-opt {
+  padding: 7px 10px; border-radius: 7px; font-size: 12px; color: var(--text-dim, #cbd5e1);
+  cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.ssel-opt:hover, .ssel-opt.is-active { background: rgba(14,165,233,.16); color: #fff; }
+.ssel-opt.is-selected { background: rgba(14,165,233,.22); color: #fff; font-weight: 700; }
+.ssel-group {
+  font-size: 11px; text-transform: uppercase; letter-spacing: .8px; color: #64748b;
+  padding: 7px 10px 3px; font-weight: 700;
+}
+.ssel-empty { padding: 12px 10px; font-size: 11.5px; color: #64748b; text-align: center; }
+
+/* Baris toolbar filter di atas heatmap */
+.heatmap-filter-bar {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+.heatmap-filter-bar .hmf-label { font-size: 11px; color: var(--text-mute, #94a3b8); }
+
+/* ---------- Cross Analysis (VHMS x SOS) ---------- */
+#cross-area .panel-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 14px; flex-wrap: wrap; }
+.heat-label { text-align: left; font-size: 10.5px; color: #cbd5e1; padding: 6px 8px; white-space: nowrap; }
+#cross-heatmap-table td { border: 1px solid rgba(30,41,59,.6); }
+#cross-heatmap-table td:hover { outline: 1px solid #22d3ee; }
+@media (max-width: 900px) {
+  #cross-area .grid-2 { grid-template-columns: 1fr !important; }
+}
+/* Panel di dalam grid Cross Analysis: netralkan margin antar-panel agar
+   kolom kiri & kanan benar-benar sejajar (baik horizontal maupun vertikal). */
+#cross-area .grid-2 > .panel + .panel { margin-top: 0 !important; }
+
+/* ---------- Correlation ---------- */
+.corr-list { display: flex; flex-direction: column; gap: 8px; margin-top: 8px; }
+.corr-item { display: flex; justify-content: space-between; align-items: center; gap: 14px;
+  padding: 8px 12px; border-radius: 8px; background: rgba(30,41,59,.5); flex-wrap: wrap; }
+.corr-pair { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+.corr-param { font-size: 11px; font-weight: 600; color: #e2e8f0; padding: 2px 8px;
+  background: rgba(148,163,184,.1); border-radius: 4px; }
+.corr-meta { display: flex; align-items: center; gap: 10px; }
+.corr-r { font-size: 12px; font-weight: 700; font-family: 'JetBrains Mono', monospace; }
+.corr-strength { font-size: 10px; color: #94a3b8; text-transform: uppercase; letter-spacing: .4px; }
+.corr-bar { width: 60px; height: 5px; border-radius: 3px; background: rgba(148,163,184,.15); overflow: hidden; }
+.corr-bar-fill { height: 100%; border-radius: 3px; transition: width .3s; }
+
+/* ---------- Alert Timeline ---------- */
+.tl-list { display: flex; flex-direction: column; gap: 10px; margin-top: 8px; }
+.tl-item { padding: 10px 14px; border-radius: 8px; background: rgba(30,41,59,.5); }
+.tl-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+.tl-label { font-size: 12px; font-weight: 700; color: #e2e8f0; }
+.tl-speed { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .4px; }
+.tl-track { display: flex; align-items: center; gap: 0; flex-wrap: wrap; }
+.tl-node { display: flex; align-items: center; gap: 5px; }
+.tl-dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; flex-shrink: 0; }
+.bg-ok { background: #10b981; } .bg-warn { background: #f59e0b; } .bg-crit { background: #ef4444; }
+.tl-smr { font-size: 10px; font-family: 'JetBrains Mono', monospace; color: #cbd5e1; }
+.tl-connector { display: flex; align-items: center; padding: 0 6px; }
+.tl-connector::before { content: ''; width: 30px; height: 2px; background: #334155; display: inline-block; }
+.tl-dur { font-size: 11px; color: #94a3b8; margin-left: 4px; white-space: nowrap; }
+
