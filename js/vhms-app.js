@@ -93,18 +93,151 @@
   /* -----------------------------------------------------------------------
    * Inti: proses teks CSV -> dashboard
    * --------------------------------------------------------------------- */
+  /* -----------------------------------------------------------------------
+   * [T7.1 2026-10-08] Routing berdasarkan Data Type file VHMS.
+   * ---------------------------------------------------------------------
+   *   '10' -> Fault History  -> disimpan sebagai riwayat fault unit (bukan
+   *           unit baru!). Butuh trend utama unit yang sama untuk dipetakan.
+   *   '81' -> T/M Trend      -> digabung sebagai record trend unit yang sama
+   *           (kunci identitas tetap SN + Model lewat VHMS_FLEET.add).
+   *   '86' -> Chassis Trend  -> SAMA seperti '81': SMR & Calendar-nya sah,
+   *           jadi digabung sebagai record trend unit yang sama. Kuncinya
+   *           adalah parameter BARU `tmFill*` (fill time) + duty termal
+   *           retarder & gas buang per grup silinder.
+   *   'DA'/'D9' -> Matriks clutch -> BUKAN seri waktu; tidak boleh masuk
+   *           `records`. Dilampirkan ke unit yang SUDAH ADA (seperti fault).
+   *   selain itu ('40' / kosong) -> trend utama, jalur LAMA apa adanya.
+   * @returns {string} 'fault' | 'tmTrend' | 'chassis' | 'clutch' | 'trend' | 'unknown'
+   * --------------------------------------------------------------------- */
+  function dataTypeOf(parsed) {
+    var t = parsed && parsed.dataType ? String(parsed.dataType).trim() : '';
+    if (t === '10') return 'fault';
+    if (t === '81') return 'tmTrend';
+    if (t === '86') return 'chassis';
+    var clutch = global.VHMS_CLUTCH;
+    if (clutch && clutch.isClutchType(t)) return 'clutch';
+    // [PC2000 2026-10-10 — T12] Sumber data tambahan.
+    //   '90'          -> Operating Availability
+    //   '30'/'7F'/'7E'-> Load Map (beban mesin / torsi)
+    //   '60'/'61'     -> Snapshot
+    //   '31'          -> Temporary Load Map (DITOLAK, lihat D2)
+    var opava = global.VHMS_OPAVA;
+    if (opava && opava.isOpAvaType(t)) return 'opAva';
+    var lm = global.VHMS_LOADMAP;
+    if (lm && lm.isRejectedLoadMapType(t)) return 'loadMapRejected';
+    if (lm && lm.isLoadMapType(t)) return 'loadMap';
+    var snap = global.VHMS_SNAPSHOT;
+    if (snap && snap.isSnapshotType(t)) return 'snapshot';
+    // [D375A 2026-10-13] Matriks perpindahan gigi transmisi (tipe '83').
+    // Sama seperti clutch: BUKAN seri waktu, menempel ke unit yang sudah ada.
+    var shift = global.VHMS_SHIFTMAP;
+    if (shift && shift.isShiftMapType && shift.isShiftMapType(t)) return 'shiftMap';
+    // [HD785 2026-10-14] Matriks beban per gigi (13 tipe: F8/E2..E5/F9/FA/FB/
+    // CA + 44/45/47/48) dan peta duty operasi (52/54/56/57/58). Keduanya
+    // matriks kumulatif tanpa SMR -> menempel ke unit yang sudah ada.
+    var gear = global.VHMS_GEARLOAD;
+    if (gear && gear.isGearLoadType && gear.isGearLoadType(t)) return 'gearLoad';
+    var duty = global.VHMS_DUTYMAP;
+    if (duty && duty.isDutyMapType && duty.isDutyMapType(t)) return 'dutyMap';
+    if (t === '40' || t === '') return 'trend';
+    // [FIX 2026-10-13] Tipe yang SAH tetapi BELUM punya penafsir. Dipisah dari
+    // 'unknown' agar pesannya jujur ("belum didukung") — bukan seolah berkas
+    // rusak. Daftar ini tumbuh saat jenis baru ditambahkan; sengaja DIKURASI,
+    // bukan wildcard, supaya berkas benar-benar tak dikenal tetap menonjol.
+    // [HD785 2026-10-14] 18 tipe DIKELUARKAN dari daftar ini karena kini
+    // punya penafsir: 13 matriks gigi (vhms-gearload.js) + 5 peta duty
+    // (vhms-dutymap.js). Yang TERSISA di bawah sengaja belum ditafsirkan.
+    //
+    // '70'/'71' (Running Direction/Area Map) & 'D8' (TM ABUse) SENGAJA
+    // tetap di sini meskipun strukturnya terbaca sempurna: tidak ada
+    // legenda untuk "Area A/B/C/D" maupun "T/M AREA 1..7" di SATU PUN dari
+    // 34 berkas ekspor. Menafsirkannya = mengarang. Begitu legenda Shop
+    // Manual tersedia, keduanya tinggal dipindahkan ke modul penafsir.
+    var UNSUPPORTED_HIST = {
+      '50': 'Cycle Interval',
+      '70': 'Running Direction Map', '71': 'Running Area Map',
+      '88': 'L/U Shift Change Map',
+      'D8': 'TM ABUse'
+    };
+    var UNSUPPORTED_HISTORY = { '2F': 'VHMS History', '93': 'Machine History' };
+    if (UNSUPPORTED_HIST[t] || UNSUPPORTED_HISTORY[t]) return 'unsupported';
+    return 'unknown';
+  }
+
+  /** Epoch terakhir dari sebuah blok `Time Stamp` VHMS (untuk pesan). */
+  function stampOf(parsed) {
+    var ts = parsed && parsed.meta ? parsed.meta['Time Stamp'] : null;
+    return ts ? String(ts).split(',')[0].trim() : '';
+  }
+
+  /** Alias tipis: jenis berkas dari hasil parse (dipakai di alur batch). */
+  function kindOf(parsed) { return dataTypeOf(parsed); }
+
   function processText(text, sourceName) {
     try {
       showLoading('Membaca & memvalidasi CSV...');
 
+      // [FIX 2026-10-13] BERKAS NON-VHMS diabaikan senyap, bukan error.
+      // `index00.csv` (manifes "Files Information" berisi daftar berkas unit)
+      // sering ikut tercentang saat operator memilih seluruh folder. Berkas
+      // itu BUKAN data telemetri dan tidak punya blok [Data] — memaksanya
+      // masuk parser hanya menghasilkan "Bagian [Data] tidak ditemukan" yang
+      // menakutkan tanpa sebab. Cukup lewati.
+      var head = String(text).slice(0, 4000);
+      if (/^\s*\[Files Information\]/im.test(head) &&
+          !/^\s*\[Data\]\s*$/im.test(text)) {
+        toast('"' + (sourceName || 'berkas') + '" dilewati: manifes daftar berkas (bukan data VHMS).', 'ok');
+        hideLoading();
+        return true;
+      }
+
       // 1) Parse
       var parsed = parser.parse(text);
+      var kind = dataTypeOf(parsed);
+      var rawType = String(parsed.dataType || '').trim();
+
+      // [T7.1] Jalur KHUSUS Fault History ('10').
+      if (kind === 'fault') return processFaultText(text, sourceName);
+      // [T7.3 2026-10-09] Jalur KHUSUS Matriks clutch ('DA'/'D9').
+      if (kind === 'clutch') return processClutchText(text, sourceName, parsed);
+
+      // [FIX 2026-10-13] TIPE TAK DIKENAL -> pesan yang MENJELASKAN, bukan
+      // "Tidak ada baris data valid". Jenis berkas VHMS yang belum punya
+      // penafsir (mis. '83' T/M Shift Change Map, '88' L/U Shift Change Map,
+      // '50' Cycle Interval) sebelum ini jatuh ke jalur trend, menghasilkan
+      // 0 record, lalu ditolak dengan pesan menyesatkan — seolah berkasnya
+      // rusak. Padahal berkasnya SAH, hanya belum didukung.
+      if (kind === 'unknown') {
+        throw new Error('Jenis berkas VHMS tipe "' + (rawType || '?') + '" belum didukung ' +
+          '(judul: ' + (parsed.dataTitle || '—') + '). Berkasnya tidak rusak — ' +
+          'jenis ini memang belum punya penafsir. Muat berkas trend (' +
+          'Trend Analysis / Chassis Trend / T/M Trend), Fault History, clutch, ' +
+          'Load Map, Snapshot, atau Operating Availability.');
+      }
+      // [FIX 2026-10-13] Tipe SAH yang belum ditafsirkan (histogram/riwayat).
+      // Ditolak dengan pesan JUJUR + tidak menghentikan berkas lain dalam
+      // batch yang sama. Sebelumnya ini jatuh ke jalur trend dan muncul
+      // sebagai "Tidak ada baris data valid" — seolah berkasnya rusak.
+      if (kind === 'unsupported') {
+        throw new Error('tidak didukung: ' + (parsed.dataTitle || ('tipe ' + rawType)) +
+          ' (tipe ' + (rawType || '?') + '). Berkas ini SAH tetapi belum punya ' +
+          'penafsir di aplikasi. Berkas lain pada pilihan yang sama tetap dimuat.');
+      }
+
+      if (!parsed.records.length && kind !== 'chassis') throw new Error('File tidak mengandung baris data.');
       if (!parsed.records.length) throw new Error('File tidak mengandung baris data.');
 
       // 2) Analitik
       showLoading('Menghitung analitik & mendeteksi anomali...');
       var analysis = analytics.analyze(parsed);
       analysis.sourceFile = sourceName || 'data.csv';
+      // [T7.2] Teruskan tipe file agar unit tahu ini record tambahan trend
+      // (T/M Trend) atau trend utama.
+      analysis.dataType = parsed.dataType || '40';
+      // [B2 2026-10-10] Tandai bila parser terpaksa memakai pemetaan kolom
+      // posisional. Dipakai gerbang migrasi saat restore untuk membuang
+      // unit yang datanya tercemar oleh bug fallback lama.
+      analysis.usedFallback = parsed.usedFallback === true;
 
       // 3) Daftarkan ke fleet (bisa merge bila SN sudah ada).
       // [KONSISTENSI NAVIGASI 2026-10-03] JANGAN langsung buka detail unit.
@@ -121,6 +254,8 @@
       } else {
         msg = 'Berhasil memuat ' + analysis.records.length + ' record dari "' + (sourceName || 'data.csv') + '".';
       }
+      if (kind === 'tmTrend') msg = 'T/M Trend: ' + msg;
+      if (kind === 'chassis') msg = 'Chassis Trend: ' + msg;
       if (nCrit > 0) msg += ' ' + nCrit + ' anomali kritis terdeteksi.';
       var vRep = analysis.validationReport;
       if (vRep && (vRep.droppedInvalidSmr || vRep.droppedDuplicate)) {
@@ -136,6 +271,528 @@
       toast('Gagal memuat: ' + err.message, 'err');
       return false;
     }
+  }
+
+  /* -----------------------------------------------------------------------
+   * [T7.1] Fault History ('10') -> simpan sebagai riwayat fault unit.
+   * ---------------------------------------------------------------------
+   * ATURAN PENTING: file fault TIDAK PERNAH membuat unit baru. Ia hanya
+   * melengkapi unit yang SUDAH ADA (dicocokkan lewat SN + Model). Bila unit
+   * belum ada, kita menolak dengan pesan jelas — lebih baik daripada
+   * membuat unit "hantu" tanpa data trend (sumbu waktu fault tidak akan
+   * bisa dipetakan). Lihat docs/STATUS_PROYEK.md §2.4.
+   * --------------------------------------------------------------------- */
+  function processFaultText(text, sourceName) {
+    var fp = global.VHMS_FAULT_PARSER;
+    if (!fp) return processTrendFallback(text, sourceName, 'Parser fault tidak tersedia.');
+
+    var fault = fp.parseFault(text);
+    if (!fault.events.length) throw new Error('File fault tidak mengandung event.');
+
+    // Cari unit dengan SN + Model yang sama.
+    var meta = fault.meta || {};
+    var id = findUnitIdByMeta(meta);
+    if (!id) {
+      hideLoading();
+      toast('File fault "' + (sourceName || 'fault.csv') + '" memuat ' + fault.events.length +
+        ' event, tetapi unit SN ' + (meta['Machine Serial No.'] || '—') +
+        ' belum ada di armada. Muat dulu "trend0.CSV" unit ini (boleh dipilih ' +
+        'bersamaan dengan fault0.CSV), lalu ulangi.', 'err');
+      return false;
+    }
+
+    var unit = fleet.get(id);
+    var analysis = fleet.getAnalysis(id);
+    // Titipkan event fault pada objek analysis lalu simpan ulang unit.
+    // fleet.add() akan mengenali SN yang sama -> merge, dan _attachFault()
+    // menghitung faultSummary + menerapkan gerbang kualitas data.
+    var res = fleet.add({
+      meta: analysis.meta,
+      columns: analysis.columns,
+      units: analysis.units,
+      records: analysis.records || [],
+      _faultEvents: fault.events
+    }, sourceName);
+
+    showFleetView();
+    var maskRep = fleet.getMaskReport(id);
+    var msg = 'Riwayat fault unit SN ' + (meta['Machine Serial No.'] || '—') + ': ' +
+      fault.events.length + ' event, ' + fault.events.filter(function (e) { return e.active; }).length +
+      ' masih aktif.';
+    if (maskRep && maskRep.maskCount) {
+      msg += ' ' + maskRep.maskCount + ' parameter dikecualikan dari skor.';
+    }
+    toast(msg, (maskRep && maskRep.maskCount) ? 'err' : 'ok');
+    hideLoading();
+    return true;
+  }
+
+  /* ---------------------------------------------------------------------
+   * [R4-HD 2026-10-09] Info OVERHAUL transmisi/clutch dari data Lifetime.
+   * ---------------------------------------------------------------------
+   * Matriks clutch bersifat kumulatif seumur hidup; setelah transmisi/clutch
+   * di-overhaul, matriks harus dibersihkan (konsep CLC: hanya pakai data
+   * pasca-pemasangan komponen terakhir). Sumber tanggal = kolom
+   * `Last Install` / `LastTecoDate` pada berkas Lifetime untuk komponen
+   * powertrain (TRANSMISSION / TORQUE CONVERTER / CLUTCH).
+   *
+   * Return null bila unit tidak ada di Lifetime atau tidak ada baris T/M.
+   * --------------------------------------------------------------------- */
+  function overhaulInfoFor(serial, modelOrLambung) {
+    var store = global.PORTFOLIO_STORE;
+    var clutch = global.VHMS_CLUTCH;
+    if (!store || !store.getLifetime) return null;
+
+    var lambung = modelOrLambung || serial;
+    try {
+      if (store.resolveLambung) lambung = store.resolveLambung(modelOrLambung || serial, serial) || lambung;
+    } catch (e) { /* pakai apa adanya */ }
+
+    var rows = [];
+    try { rows = store.getLifetime(lambung) || []; } catch (e) { rows = []; }
+    if (!rows.length && lambung !== serial) {
+      try { rows = store.getLifetime(serial) || []; } catch (e2) { rows = []; }
+    }
+    if (!rows.length) return null;
+
+    var re = (clutch && clutch.OVERHAUL_COMPONENT_RE) || /(transmission|transmisi|torque|clutch|powertrain)/i;
+    var best = null;
+    rows.forEach(function (r) {
+      if (!r || !r.component) return;
+      if (!re.test(String(r.component))) return;
+      var date = r.installDate || null;
+      var ageHours = (typeof r.ageHours === 'number') ? r.ageHours : null;
+      // Pilih yang berumur komponen PALING BESAR (yang terakhir lama terpasang)
+      // — bila ada beberapa baris powertrain, ambil yang paling informatif.
+      if (!best || (ageHours !== null && best.ageHours !== null && ageHours > best.ageHours) ||
+          (date && !best.date)) {
+        best = { date: date, ageHours: ageHours, component: r.component };
+      }
+    });
+    if (!best) return null;
+    return {
+      date: best.date,
+      ageHoursAtOverhaul: best.ageHours,
+      component: best.component,
+      source: 'Lifetime Last Install / LastTecoDate'
+    };
+  }
+
+  /* ---------------------------------------------------------------------
+   * [T7.3 2026-10-09] Matriks clutch (`clutch_slip.CSV` / `clutch_therm.CSV`).
+   * ---------------------------------------------------------------------
+   * ATURAN SAMA dengan fault0.CSV: berkas matriks TIDAK PERNAH membuat unit
+   * baru. Ia melengkapi unit yang SUDAH ADA (dicocokkan SN + Model), karena
+   * tanpa unit induk tidak ada konteks SMR/model untuk menafsirkan matriks.
+   *
+   * Berbeda dari fault, matriks TIDAK memengaruhi gerbang kualitas data
+   * (tidak mem-mask apa pun) — ia melengkapi sebagai `unit.clutchMatrix`.
+   * --------------------------------------------------------------------- */
+  function processClutchText(text, sourceName, parsed) {
+    var clutch = global.VHMS_CLUTCH;
+    if (!clutch) {
+      hideLoading();
+      toast('Modul matriks clutch (vhms-clutch.js) tidak tersedia.', 'err');
+      return false;
+    }
+    var matrix = clutch.parseClutchMatrix(text, {
+      dataType: parsed && parsed.dataType,
+      sourceName: sourceName
+    });
+    if (!matrix.topPosition) {
+      hideLoading();
+      toast('Berkas "' + (sourceName || 'clutch.csv') + '" tidak memuat baris ' +
+        'posisi clutch yang dapat dibaca.', 'err');
+      return false;
+    }
+
+    var meta = matrix.meta || {};
+    var id = findUnitIdByMeta(meta);
+    if (!id) {
+      hideLoading();
+      toast('Berkas matriks clutch "' + (sourceName || 'clutch.csv') +
+        '" memuat ' + matrix.severityRank.length + ' posisi, tetapi unit SN ' +
+        (meta['machine serial no.'] || meta['Machine Serial No.'] || '—') +
+        ' belum ada di armada. Muat dulu "trend0.CSV" unit ini (boleh dipilih ' +
+        'bersamaan), lalu ulangi.', 'err');
+      return false;
+    }
+
+    // [R4-HD] Bersihkan matriks pra-overhaul (konsep CLC) bila info tersedia.
+    var serial = metaValue(meta, 'Machine Serial No.');
+    var ovh = overhaulInfoFor(serial, serial);
+    var cutRes = { cut: false, reason: 'Info overhaul tidak tersedia — matriks dipakai apa adanya.' };
+    try {
+      if (ovh && typeof clutch.applyOverhaulCut === 'function') {
+        cutRes = clutch.applyOverhaulCut(matrix, {
+          overhaulDate: ovh.date,
+          ageHoursAtOverhaul: ovh.ageHoursAtOverhaul,
+          component: ovh.component,
+          source: ovh.source
+        });
+      }
+    } catch (e) {
+      cutRes = { cut: false, reason: 'Gagal menilai overhaul: ' + (e && e.message) };
+    }
+
+    var res = fleet.attachClutchMatrix(id, matrix, sourceName);
+    if (!res) {
+      hideLoading();
+      toast('Gagal melampirkan matriks clutch ke unit.', 'err');
+      return false;
+    }
+
+    showFleetView();
+    var top = matrix.severityRank[0];
+    var msg = (matrix.kind === 'thermal' ? 'Thermal load' : 'Slip time') +
+      ' clutch SN ' + (serial || '—') + ' terlampir: ' +
+      matrix.severityRank.length + ' posisi. Tertinggi: ' + top.position +
+      (top.saturated ? ' (skor = batas bawah, sel bersaturasi)' : '') + '.';
+    if (cutRes.cut) {
+      msg += ' DIBERSIHKAN: snapshot sebelum overhaul ' + (matrix.overhaulDate && matrix.overhaulDate.iso) +
+        ' — matriks tidak dipakai untuk skoring.';
+      toast(msg, 'info');
+    } else {
+      toast(msg, matrix.anySaturated ? 'info' : 'ok');
+    }
+    hideLoading();
+    return true;
+  }
+
+  /** Fallback: tampilkan pesan lalu coba jalur trend biasa. */
+  function processTrendFallback(text, sourceName, reason) {
+    hideLoading();
+    toast('Gagal memuat fault: ' + reason, 'err');
+    return false;
+  }
+
+  /* -----------------------------------------------------------------------
+   * [D375A 2026-10-13] T/M Shift Change Map ('83') -> unit.shiftMap.
+   * ---------------------------------------------------------------------
+   * Matriks perpindahan gigi transmisi (From x To). Mengikuti ATURAN YANG
+   * SAMA dengan clutch/fault: TIDAK PERNAH membuat unit baru — hanya
+   * melengkapi unit yang sudah ada (dicocokkan lewat SN + Model).
+   * --------------------------------------------------------------------- */
+  function processShiftMapText(text, sourceName, parsed) {
+    var sm = global.VHMS_SHIFTMAP;
+    if (!sm) { hideLoading(); toast('Modul Shift Change Map tidak tersedia.', 'err'); return false; }
+
+    var res = sm.parse(text, { dataType: parsed && parsed.dataType, sourceName: sourceName });
+    if (!res.rowLabels.length || !res.indicators) {
+      hideLoading();
+      toast('Berkas "' + (sourceName || 'tm_sft0.CSV') + '" tidak memuat baris posisi transmisi.', 'err');
+      return false;
+    }
+
+    var meta = res.meta || {};
+    var id = findUnitIdByMeta(meta);
+    if (!id) {
+      hideLoading();
+      toast(needParentUnit(sourceName, metaValue(meta, 'Machine Serial No.'),
+        res.rowLabels.length + ' posisi'), 'err');
+      return false;
+    }
+
+    var stored = fleet.attachShiftMap(id, res, sourceName);
+    if (!stored) { hideLoading(); toast('Gagal melampirkan Shift Change Map ke unit.', 'err'); return false; }
+
+    showFleetView();
+    var I = res.indicators;
+    var msg = 'Perpindahan gigi SN ' + (metaValue(meta, 'Machine Serial No.') || '—') +
+      ' terlampir: ' + fmtIntSafe(I.totalShift) + ' perpindahan seumur hidup.';
+    if (I.biggestCell) {
+      msg += ' Terbanyak: ' + I.biggestCell.from + '\u2192' + I.biggestCell.to + '.';
+    }
+    if (I.selfShift > 0) msg += ' PERINGATAN: diagonal berisi ' + fmtIntSafe(I.selfShift) + '.';
+    toast(msg, I.selfShift > 0 ? 'info' : 'ok');
+    hideLoading();
+    return true;
+  }
+
+  /* -----------------------------------------------------------------------
+   * [HD785 2026-10-14] MATRIKS BEBAN PER GIGI (13 tipe) -> unit.gearLoad.
+   * ---------------------------------------------------------------------
+   * Berbeda dari sumber lain: SATU unit menerima SAMPAI 13 berkas yang
+   * bersama-sama membentuk satu gambaran. Setiap berkas dilampirkan
+   * sendiri-sendiri; ringkasan (pangsa L/U vs T/C, jam per gigi) dihitung
+   * ulang oleh store setiap kali ada yang menempel.
+   *
+   * Toast sengaja menampilkan ringkasan KUMULATIF (bukan per berkas) agar
+   * operator langsung melihat gambaran utuh tanpa menjumlah sendiri 13 toast.
+   * --------------------------------------------------------------------- */
+  function processGearLoadText(text, sourceName, parsed) {
+    var gl = global.VHMS_GEARLOAD;
+    if (!gl) { hideLoading(); toast('Modul beban per gigi tidak tersedia.', 'err'); return false; }
+
+    var res;
+    try {
+      res = gl.parse(text, { dataType: parsed && parsed.dataType, sourceName: sourceName });
+    } catch (e) {
+      hideLoading();
+      toast('Berkas "' + (sourceName || 'matriks gigi') + '" gagal dibaca: ' + e.message, 'err');
+      return false;
+    }
+    if (!res.matrix.length) {
+      hideLoading();
+      toast('Berkas "' + (sourceName || 'matriks gigi') + '" tidak memuat baris data.', 'err');
+      return false;
+    }
+
+    var meta = res.meta || {};
+    var id = findUnitIdByMeta(meta);
+    if (!id) {
+      hideLoading();
+      toast(needParentUnit(sourceName, metaValue(meta, 'Machine Serial No.'),
+        'matriks beban gigi ' + (res.gear || '?')), 'err');
+      return false;
+    }
+
+    var stored = fleet.attachGearLoad(id, res, sourceName);
+    if (!stored) { hideLoading(); toast('Gagal melampirkan matriks beban gigi ke unit.', 'err'); return false; }
+
+    showFleetView();
+    var s = stored.summary;
+    var msg = 'Beban gigi ' + (res.gear || '?') +
+      ' (' + (res.mode === gl.MODE_LOCKUP ? 'lock-up' : 'torque converter') + ') SN ' +
+      (metaValue(meta, 'Machine Serial No.') || '—') + ' terlampir';
+    if (res.hours !== null) msg += ': ' + fmtIntSafe(Math.round(res.hours)) + ' jam';
+    msg += '.';
+    if (s && s.totalHours !== null) {
+      msg += ' Total ' + s.fileCount + ' gigi = ' + fmtIntSafe(Math.round(s.totalHours)) +
+        ' jam jalan, lock-up ' + s.lockupShare.toFixed(1) + ' %.';
+    }
+    toast(msg, 'ok');
+    hideLoading();
+    return true;
+  }
+
+  /* -----------------------------------------------------------------------
+   * [HD785 2026-10-14] PETA DUTY OPERASI (52/54/56/57/58) -> unit.dutyMap.
+   * ---------------------------------------------------------------------
+   * '52' & '54' adalah PASANGAN (bermuatan vs kosong) — selisihnya dihitung
+   * store begitu keduanya ada. Toast menonjolkan pola TERBALIK bila terjadi,
+   * karena itulah satu-satunya temuan yang langsung dapat ditindaklanjuti.
+   * --------------------------------------------------------------------- */
+  function processDutyMapText(text, sourceName, parsed) {
+    var dm = global.VHMS_DUTYMAP;
+    if (!dm) { hideLoading(); toast('Modul peta duty tidak tersedia.', 'err'); return false; }
+
+    var res;
+    try {
+      res = dm.parse(text, { dataType: parsed && parsed.dataType, sourceName: sourceName });
+    } catch (e) {
+      hideLoading();
+      toast('Berkas "' + (sourceName || 'peta duty') + '" gagal dibaca: ' + e.message, 'err');
+      return false;
+    }
+    if (!res.kind) {
+      hideLoading();
+      toast('Berkas "' + (sourceName || 'peta duty') + '" bukan peta duty yang dikenali.', 'err');
+      return false;
+    }
+
+    var meta = res.meta || {};
+    var id = findUnitIdByMeta(meta);
+    if (!id) {
+      hideLoading();
+      toast(needParentUnit(sourceName, metaValue(meta, 'Machine Serial No.'),
+        (res.label || 'peta duty')), 'err');
+      return false;
+    }
+
+    var stored = fleet.attachDutyMap(id, res, sourceName);
+    if (!stored) { hideLoading(); toast('Gagal melampirkan peta duty ke unit.', 'err'); return false; }
+
+    showFleetView();
+    var msg = (res.label || 'Peta duty') + ' SN ' +
+      (metaValue(meta, 'Machine Serial No.') || '—') + ' terlampir';
+    if (res.hours !== null) msg += ': ' + fmtIntSafe(Math.round(res.hours)) + ' jam';
+    else if (res.zones && res.zones.startCount) msg += ': ' + fmtIntSafe(res.zones.startCount) + ' kali start';
+    msg += '.';
+
+    var tone = 'ok';
+    var d = stored.loadedDelta;
+    if (d) {
+      if (d.lugInverted) {
+        msg += ' ⚠ ' + d.invertedNote;
+        tone = 'info';
+      } else {
+        msg += ' Zona LUG bermuatan ' + d.zonesLoaded.lugShare.toFixed(1) +
+          ' % vs kosong ' + d.zonesUnloaded.lugShare.toFixed(1) + ' % (pola wajar).';
+      }
+    }
+    toast(msg, tone, tone === 'info' ? 9000 : 5000);
+    hideLoading();
+    return true;
+  }
+
+  /** Pemformat ribuan aman (hindari error bila util belum siap). */
+  function fmtIntSafe(n) {
+    if (n === null || n === undefined || isNaN(n)) return '—';
+    var u = global.UI_UTIL;
+    if (u && typeof u.fmtInt === 'function') return u.fmtInt(n);
+    return String(Math.round(n)).replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+  }
+
+  /* -----------------------------------------------------------------------
+   * [PC2000 2026-10-10 — T12] SUMBER DATA TAMBAHAN (menempel ke unit ADA).
+   * ---------------------------------------------------------------------
+   * Ketiganya mengikuti ATURAN YANG SAMA dengan fault0/clutch: TIDAK PERNAH
+   * membuat unit baru, hanya melengkapi unit yang sudah ada (cocok SN).
+   * Tanpa unit induk tidak ada konteks SMR/model untuk menafsirkannya.
+   * --------------------------------------------------------------------- */
+
+  /** Pesan baku saat unit induk belum ada. */
+  function needParentUnit(namaBerkas, serial, jumlah) {
+    return 'Berkas "' + (namaBerkas || 'data.csv') + '" memuat ' + jumlah +
+      ' data, tetapi unit SN ' + (serial || '—') + ' belum ada di armada. ' +
+      'Muat dulu berkas trend unit ini (boleh dipilih bersamaan), lalu ulangi.';
+  }
+
+  /** Load Map ('30'/'7F'/'7E') -> unit.loadMap / unit.torqueMap. */
+  function processLoadMapText(text, sourceName, parsed) {
+    var lm = global.VHMS_LOADMAP;
+    if (!lm) { hideLoading(); toast('Modul Load Map tidak tersedia.', 'err'); return false; }
+
+    var res = lm.parse(text, { dataType: parsed && parsed.dataType, sourceName: sourceName });
+    if (res.rejected) {
+      hideLoading();
+      toast('Berkas "' + (sourceName || 'loadm.csv') + '" diabaikan: ' +
+        (res.warnings[0] || 'Temporary Load Map ditolak.'), 'err', 7000);
+      return false;
+    }
+    if (!res.matrix.length) {
+      hideLoading();
+      toast('Berkas Load Map "' + (sourceName || 'loadm.csv') + '" tidak memuat baris data.', 'err');
+      return false;
+    }
+
+    var meta = res.meta || {};
+    var id = findUnitIdByMeta(meta);
+    if (!id) {
+      hideLoading();
+      toast(needParentUnit(sourceName, metaValue(meta, 'Machine Serial No.'), res.rowLabels.length + ' baris'), 'err');
+      return false;
+    }
+
+    var stored = fleet.attachLoadMap(id, res, sourceName);
+    if (!stored) { hideLoading(); toast('Gagal melampirkan Load Map ke unit.', 'err'); return false; }
+
+    showFleetView();
+    var label = res.kind === lm.KIND_ENGINE_LOAD ? 'Beban mesin' :
+      (res.kind === lm.KIND_TORQUE_WORK ? 'Torsi pompa kerja' : 'Torsi seluruh pompa');
+    var z = res.zones || {};
+    var msg = label + ' SN ' + (metaValue(meta, 'Machine Serial No.') || '—') + ' terlampir.';
+    if (z.lugShare !== undefined) msg += ' Zona LUG ' + z.lugShare.toFixed(1) + ' %.';
+    else if (z.highTorqueShare !== undefined) msg += ' Torsi >3000 Nm ' + z.highTorqueShare.toFixed(1) + ' %.';
+    toast(msg, 'ok');
+    hideLoading();
+    return true;
+  }
+
+  /** Snapshot ('60'/'61') -> daftar snapshot unit (kunci SMR+Trigger). */
+  function processSnapshotText(text, sourceName, parsed) {
+    var snap = global.VHMS_SNAPSHOT;
+    if (!snap) { hideLoading(); toast('Modul Snapshot tidak tersedia.', 'err'); return false; }
+
+    var res = snap.parse(text, { dataType: parsed && parsed.dataType, sourceName: sourceName });
+    if (!res.rowCount) {
+      hideLoading();
+      toast('Berkas snapshot "' + (sourceName || 'snap.csv') + '" tidak memuat data.', 'err');
+      return false;
+    }
+
+    var meta = res.meta || {};
+    var id = findUnitIdByMeta(meta);
+    if (!id) {
+      hideLoading();
+      toast(needParentUnit(sourceName, metaValue(meta, 'Machine Serial No.'), res.rowCount + ' titik'), 'err');
+      return false;
+    }
+
+    var stored = fleet.attachSnapshot(id, res, sourceName);
+    if (!stored) { hideLoading(); toast('Gagal melampirkan snapshot ke unit.', 'err'); return false; }
+
+    showFleetView();
+    var msg = 'Snapshot SN ' + (metaValue(meta, 'Machine Serial No.') || '—') +
+      ' terlampir: ' + res.rowCount + ' titik, pemicu ' +
+      (res.trigger.code || '—') + ' @ ' + (res.trigger.smr !== null ? res.trigger.smr + ' h' : '—') + '.';
+    if (res.summary.stuckCount) {
+      msg += ' ' + res.summary.stuckCount + ' kolom stuck terdeteksi (' + res.summary.stuckColumns.join(', ') + ').';
+    }
+    toast(msg, res.summary.stuckCount ? 'info' : 'ok');
+    hideLoading();
+    return true;
+  }
+
+  /** Operating Availability ('90') -> unit.opAvailability. */
+  function processOpAvaText(text, sourceName, parsed) {
+    var op = global.VHMS_OPAVA;
+    if (!op) { hideLoading(); toast('Modul Operating Availability tidak tersedia.', 'err'); return false; }
+
+    var res = op.parse(text, { dataType: parsed && parsed.dataType, sourceName: sourceName });
+    if (!res.windows.length) {
+      hideLoading();
+      toast('Berkas Operating Availability "' + (sourceName || 'op_ava.csv') + '" tidak memuat jendela.', 'err');
+      return false;
+    }
+
+    var meta = res.meta || {};
+    var id = findUnitIdByMeta(meta);
+    if (!id) {
+      hideLoading();
+      toast(needParentUnit(sourceName, metaValue(meta, 'Machine Serial No.'), res.windows.length + ' jendela'), 'err');
+      return false;
+    }
+
+    var stored = fleet.attachOpAva(id, res, sourceName);
+    if (!stored) { hideLoading(); toast('Gagal melampirkan Operating Availability ke unit.', 'err'); return false; }
+
+    showFleetView();
+    var s = res.summary;
+    var msg = 'Op. Availability SN ' + (metaValue(meta, 'Machine Serial No.') || '—') + ' terlampir: ' +
+      s.windowCount + ' jendela (' + s.activeWindowCount + ' aktif), utilisasi ' +
+      (s.utilizationOverall !== null ? s.utilizationOverall.toFixed(1) : '—') + ' jam/hari.';
+    if (s.staleGaps && s.staleGaps.length) msg += ' ⚠ ' + s.staleGaps.length + ' celah data > 7 hari.';
+    toast(msg, (s.staleGaps && s.staleGaps.length) ? 'info' : 'ok');
+    hideLoading();
+    return true;
+  }
+
+  /** Baca nilai meta dengan kunci yang tahan huruf besar/kecil & spasi. */
+  function metaValue(meta, wantedKey) {
+    if (!meta) return '';
+    if (meta[wantedKey] !== undefined) return meta[wantedKey];
+    var norm = String(wantedKey).toLowerCase().replace(/\s+/g, '');
+    var keys = Object.keys(meta);
+    for (var i = 0; i < keys.length; i++) {
+      if (String(keys[i]).toLowerCase().replace(/\s+/g, '') === norm) {
+        return meta[keys[i]];
+      }
+    }
+    return '';
+  }
+
+  /** Cari ID unit armada berdasar SN (+ Model) tanpa memuat records. */
+  function findUnitIdByMeta(meta) {
+    // [FIX 2026-10-09] Kunci meta TIDAK konsisten antar parser: fault-parser
+    // menulis 'Machine Serial No.' (huruf besar) sementara clutch-parser
+    // menulis 'machine serial no.' (huruf kecil). Membaca kunci secara literal
+    // membuat pencocokan clutch SELALU gagal ("unit belum ada di armada")
+    // padahal unitnya ada. Karena itu pencarian dilewatkan metaValue().
+    var serial = normSerialKey(metaValue(meta, 'Machine Serial No.'));
+    if (!serial) return null;
+    var ids = fleet.ids();
+    for (var i = 0; i < ids.length; i++) {
+      var u = fleet.get(ids[i]);
+      var um = (u && u.analysis && u.analysis.meta) || {};
+      if (normSerialKey(um.serial) === serial) return ids[i];
+    }
+    return null;
+  }
+
+  function normSerialKey(s) {
+    return String(s == null ? '' : s).trim().replace(/[\s._\-/]+/g, '').toUpperCase();
   }
 
   /* -----------------------------------------------------------------------
@@ -318,8 +975,55 @@
     }
 
     var okCount = 0, failCount = 0, critCount = 0, mergeCount = 0, fixedCount = 0;
+    var faultCount = 0, tmCount = 0, chassisCount = 0, clutchCount = 0;
+    // [D375A 2026-10-13] Matriks perpindahan gigi terlampir.
+    var shiftMapCount = 0;
+    // [HD785 2026-10-14] Matriks beban per gigi & peta duty terlampir.
+    var gearLoadCount = 0, dutyMapCount = 0;
+    // [PC2000 2026-10-10 — T12] Sumber data tambahan (menempel ke unit ada).
+    var loadMapCount = 0, snapshotCount = 0, opAvaCount = 0, rejectedCount = 0;
+    // [FIX 2026-10-13] Hitungan berkas SAH yang belum punya penafsir.
+    var unsupportedCount = 0;
+    // [FIX 2026-10-13] Berkas non-VHMS yang dilewati (manifes daftar berkas).
+    var skippedManifest = [];
     var i = 0;
     var CHUNK = 6;   // jumlah file per giliran agar browser tetap responsif
+
+    // [FIX 2026-10-08] Fault History ('10') hanya bisa dilampirkan ke unit
+    // yang SUDAH ada di armada (T7.1). Bila pengguna memilih trend0.CSV dan
+    // fault0.CSV sekaligus, urutan pilihan file tidak dijamin — fault bisa
+    // diproses lebih dulu lalu ditolak "unit belum ada". Karena itu seluruh
+    // berkas fault DITUNDA sampai semua trend selesai dimuat.
+    var faultQueue = [];
+
+    // [T7.3 2026-10-09] Matriks clutch ('DA'/'D9') punya ketergantungan SAMA:
+    // harus dilampirkan ke unit yang sudah ada. Ditunda dengan alasan identik.
+    var clutchQueue = [];
+
+    // [D375A 2026-10-13] Matriks perpindahan gigi ('83') menempel ke unit yang
+    // sudah ada — ditunda dengan alasan yang sama persis.
+    var shiftMapQueue = [];
+
+    // [HD785 2026-10-14] Matriks beban per gigi (13 berkas) & peta duty
+    // (5 berkas) juga MENEMPEL ke unit yang sudah ada. Ditunda sama persis.
+    // Catatan: antrean gigi bisa berisi 13 entri dari satu ekspor — itu
+    // normal, bukan duplikat (tiap berkas = satu gigi/mode berbeda).
+    var gearLoadQueue = [];
+    var dutyMapQueue = [];
+
+    // [PC2000 2026-10-10 — T12] Load Map / Snapshot / Op. Availability juga
+    // MENEMPEL ke unit yang sudah ada (tidak pernah membuat unit baru).
+    // Ditunda dengan alasan yang sama persis.
+    var loadMapQueue = [];
+    var snapshotQueue = [];
+    var opAvaQueue = [];
+    // [FIX 2026-10-13] Tipe SAH yang belum punya penafsir (histogram/riwayat).
+    // Dikumpulkan agar dilaporkan JUJUR di akhir, bukan muncul sebagai
+    // "gagal" per berkas dengan pesan teknis yang menakutkan.
+    var unsupportedQueue = [];
+    // Berkas yang SENGAJA ditolak (mis. Temporary Load Map '31'). Dikumpulkan
+    // terpisah agar operator diberi tahu, bukan hilang diam-diam (D2).
+    var rejectedQueue = [];
 
     function step() {
       var end = Math.min(i + CHUNK, files.length);
@@ -327,17 +1031,74 @@
 
       var jobs = batch.map(function (f) {
         return parser.parseFile(f).then(function (parsed) {
+          // [T7.1] Fault History ('10') tidak membuat unit baru — ia
+          // melengkapi unit yang sudah ada lewat SN + Model.
+          if (String(parsed.dataType || '').trim() === '10') {
+            faultQueue.push({ text: parsed._rawText || '', name: f.name });
+            return;
+          }
+          // [T7.3] Matriks clutch juga tidak membuat unit baru.
+          if (kindOf(parsed) === 'clutch') {
+            clutchQueue.push({ text: parsed._rawText || '', name: f.name, parsed: parsed });
+            return;
+          }
+          // [D375A 2026-10-13] Matriks perpindahan gigi juga tidak membuat unit baru.
+          if (kindOf(parsed) === 'shiftMap') {
+            shiftMapQueue.push({ text: parsed._rawText || '', name: f.name, parsed: parsed });
+            return;
+          }
+          // [T12] Sumber data PC2000 yang menempel ke unit yang ada.
+          var k2 = kindOf(parsed);
+          if (k2 === 'loadMapRejected') {
+            rejectedQueue.push({ name: f.name, dataType: parsed.dataType, parsed: parsed });
+            return;
+          }
+          if (k2 === 'loadMap') { loadMapQueue.push({ text: parsed._rawText || '', name: f.name, parsed: parsed }); return; }
+          if (k2 === 'snapshot') { snapshotQueue.push({ text: parsed._rawText || '', name: f.name, parsed: parsed }); return; }
+          if (k2 === 'opAva') { opAvaQueue.push({ text: parsed._rawText || '', name: f.name, parsed: parsed }); return; }
+          // [HD785 2026-10-14] Matriks gigi & peta duty.
+          if (k2 === 'gearLoad') { gearLoadQueue.push({ text: parsed._rawText || '', name: f.name, parsed: parsed }); return; }
+          if (k2 === 'dutyMap') { dutyMapQueue.push({ text: parsed._rawText || '', name: f.name, parsed: parsed }); return; }
+          // [FIX 2026-10-13] Tipe SAH yang belum ditafsirkan (histogram/riwayat:
+          // '50','52',...,'83','93','2F') TIDAK boleh masuk jalur analitik:
+          // `analytics.analyze()` mengembalikan objek tanpa `health`, lalu
+          // `analysis.health.label` melempar TypeError dan berkas dilaporkan
+          // "gagal" — padahal berkasnya sah, hanya belum didukung.
+          // Dikumpulkan terpisah agar dilaporkan jujur (lihat akhir batch).
+          var k3 = kindOf(parsed);
+          if (k3 === 'unsupported' || k3 === 'unknown') {
+            unsupportedQueue.push({
+              name: f.name, dataType: parsed.dataType || '', title: parsed.dataTitle || '',
+              known: k3 === 'unsupported'
+            });
+            return;
+          }
           var analysis = analytics.analyze(parsed);
           analysis.sourceFile = f.name;
+          analysis.dataType = parsed.dataType || '40';
+          analysis.usedFallback = parsed.usedFallback === true;
           var r = fleet.add(analysis, f.name);
           okCount++;
           if (r.merged) mergeCount++;
+          if (String(parsed.dataType || '').trim() === '81') tmCount++;
+          if (String(parsed.dataType || '').trim() === '86') chassisCount++;
           var vr = analysis.validationReport;
           if (vr && (vr.droppedInvalidSmr || vr.droppedDuplicate || vr.warnings.length)) fixedCount++;
-          if (analysis.health.label === 'CRITICAL') critCount++;
+          if (analysis.health && analysis.health.label === 'CRITICAL') critCount++;
         }).catch(function (err) {
           failCount++;
-          console.error('Gagal memproses ' + f.name, err);
+          // [FIX 2026-10-13] BERKAS NON-VHMS (mis. `index00.csv` — manifes
+          // "Files Information" yang ikut tercentang saat memilih seluruh
+          // folder) BUKAN kegagalan. Ia tidak punya blok [Data] sehingga
+          // `parser.parse()` melempar. Operator tidak perlu diberi error
+          // teknis untuk berkas yang memang bukan data telemetri.
+          var isManifest = /Bagian \[Data\] tidak ditemukan/i.test(err.message || '');
+          if (isManifest) {
+            skippedManifest.push(f.name);
+            failCount--;                      // bukan kegagalan
+          } else {
+            console.error('Gagal memproses ' + f.name, err);
+          }
         });
       });
 
@@ -347,14 +1108,100 @@
         if (i < files.length) {
           setTimeout(step, 0);      // lepas kontrol ke UI, lalu lanjut
         } else {
+          // Semua trend selesai -> baru lampirkan berkas fault (lihat catatan
+          // pada deklarasi faultQueue).
+          faultQueue.forEach(function (q) {
+            if (processFaultText(q.text, q.name)) { okCount++; faultCount++; }
+            else { failCount++; }
+          });
+          // [T7.3] Lalu matriks clutch (ketergantungan sama dengan fault).
+          clutchQueue.forEach(function (q) {
+            if (processClutchText(q.text, q.name, q.parsed)) { okCount++; clutchCount++; }
+            else { failCount++; }
+          });
+          // [D375A 2026-10-13] Lalu matriks perpindahan gigi (sama dengan clutch).
+          shiftMapQueue.forEach(function (q) {
+            if (processShiftMapText(q.text, q.name, q.parsed)) { okCount++; shiftMapCount++; }
+            else { failCount++; }
+          });
+          // [T12] Lalu sumber data PC2000 (ketergantungan sama dengan fault).
+          loadMapQueue.forEach(function (q) {
+            if (processLoadMapText(q.text, q.name, q.parsed)) { okCount++; loadMapCount++; }
+            else { failCount++; }
+          });
+          snapshotQueue.forEach(function (q) {
+            if (processSnapshotText(q.text, q.name, q.parsed)) { okCount++; snapshotCount++; }
+            else { failCount++; }
+          });
+          opAvaQueue.forEach(function (q) {
+            if (processOpAvaText(q.text, q.name, q.parsed)) { okCount++; opAvaCount++; }
+            else { failCount++; }
+          });
+          // [HD785 2026-10-14] Matriks beban per gigi & peta duty operasi.
+          gearLoadQueue.forEach(function (q) {
+            if (processGearLoadText(q.text, q.name, q.parsed)) { okCount++; gearLoadCount++; }
+            else { failCount++; }
+          });
+          dutyMapQueue.forEach(function (q) {
+            if (processDutyMapText(q.text, q.name, q.parsed)) { okCount++; dutyMapCount++; }
+            else { failCount++; }
+          });
+          // Berkas yang ditolak: beri tahu operator (bukan gagal senyap).
+          rejectedQueue.forEach(function (q) {
+            var lm = global.VHMS_LOADMAP;
+            var msg = lm ? 'Berkas "' + q.name + '" diabaikan: ' + (function () {
+              var r = lm.parse(q.text || '', { dataType: q.dataType, sourceName: q.name });
+              return (r.warnings && r.warnings[0]) || 'Temporary Load Map ditolak.';
+            })() : 'Temporary Load Map ditolak.';
+            toast(msg, 'err', 7000);
+            rejectedCount++;
+          });
+          // [FIX 2026-10-13] Berkas SAH yang belum didukung: SATU ringkasan
+          // yang jujur, bukan satu error teknis per berkas. Operator perlu
+          // tahu berkas mana yang belum terbaca — dan bahwa sisanya tetap
+          // dimuat, sehingga tidak mengira seluruh ekspor gagal.
+          if (unsupportedQueue.length) {
+            var titles = {};
+            unsupportedQueue.forEach(function (q) {
+              var key = (q.title || ('tipe ' + q.dataType));
+              titles[key] = (titles[key] || 0) + 1;
+            });
+            var list = Object.keys(titles).map(function (k) {
+              return k + (titles[k] > 1 ? ' ×' + titles[k] : '');
+            });
+            toast(unsupportedQueue.length + ' berkas SAH dilewati (belum ada penafsir): ' +
+              list.join(', ') + '. Sisanya tetap dimuat.', 'err', 9000);
+            unsupportedCount += unsupportedQueue.length;
+          }
+          // [FIX 2026-10-13] Berkas non-VHMS (manifes) dilewati senyap tetapi
+          // TETAP diberitahukan — supaya operator tahu berkasnya terbaca dan
+          // memang sengaja tidak dipakai, bukan hilang tanpa jejak.
+          if (skippedManifest.length) {
+            toast(skippedManifest.length + ' berkas dilewati (bukan data VHMS): ' +
+              skippedManifest.join(', ') + '.', 'ok', 5000);
+          }
           hideLoading();
           var msg = okCount + ' file diproses';
           if (mergeCount) msg += ', ' + mergeCount + ' digabung ke unit lama (SN sama)';
+          if (faultCount) msg += ', ' + faultCount + ' file fault dilampirkan';
+          if (tmCount) msg += ', ' + tmCount + ' file T/M Trend digabung';
+          if (chassisCount) msg += ', ' + chassisCount + ' file Chassis Trend digabung';
+          if (clutchCount) msg += ', ' + clutchCount + ' matriks clutch dilampirkan';
+          if (shiftMapCount) msg += ', ' + shiftMapCount + ' matriks perpindahan gigi dilampirkan';
+          if (gearLoadCount) msg += ', ' + gearLoadCount + ' matriks beban gigi dilampirkan';
+          if (dutyMapCount) msg += ', ' + dutyMapCount + ' peta duty dilampirkan';
+          if (loadMapCount) msg += ', ' + loadMapCount + ' load map dilampirkan';
+          if (snapshotCount) msg += ', ' + snapshotCount + ' snapshot dilampirkan';
+          if (opAvaCount) msg += ', ' + opAvaCount + ' op. availability dilampirkan';
+          if (rejectedCount) msg += ', ' + rejectedCount + ' file diabaikan (duplikat)';
           msg += ' → ' + fleet.count() + ' unit di Home.';
           if (critCount) msg += ' ' + critCount + ' unit CRITICAL.';
           if (fixedCount) msg += ' ' + fixedCount + ' file melewati validasi (duplikat/SMR tidak wajar).';
           if (failCount) msg += ' ' + failCount + ' file gagal.';
-          toast(msg, (critCount || fixedCount) ? 'err' : 'ok');
+          // [FIX 2026-10-08] `failCount` WAJIB mewarnai toast merah. Dulu
+          // hanya critCount/fixedCount yang dicek, sehingga upload yang
+          // gagal total tetap tampil hijau "berhasil" — menyesatkan.
+          toast(msg, (failCount || critCount || fixedCount) ? 'err' : 'ok');
           // [KONSISTENSI NAVIGASI 2026-10-03] SELALU ke halaman daftar unit
           // setelah upload — berapa pun jumlah unitnya. Detail hanya dibuka
           // lewat tombol "Detail" (perilaku sama dengan mode SOS).
@@ -435,15 +1282,23 @@
     return '# Result VHMS Trend_' + comp + '_' + status + '_' + lambung + '_Follow Up ' + sla;
   }
 
-  function exportReport() {
-    if (!state.current) { toast('Belum ada data untuk dijadikan laporan.', 'err'); return; }
-    var fname = getVHMSReportFileName(state.current);
-    document.title = fname;
-    document.body.classList.add('printing');
-    setTimeout(function () {
-      window.print();
-    }, 120);
-  }
+  /* -----------------------------------------------------------------------
+   * [HAPUS 2026-10-13 · hasil audit] Fungsi `exportReport` DIHAPUS.
+   * ---------------------------------------------------------------------
+   * Fungsi ini satu-satunya pemanggil `document.body.classList.add('printing')`
+   * — dan kelas `.printing` TIDAK PUNYA SATU PUN aturan CSS di proyek ini
+   * (dicari di seluruh css/: hanya `.printing-portfolio` & `.printing-followup`
+   * yang nyata). Sejak tombol `#btn-report` dialihkan ke "Export Data" (CSV),
+   * fungsi ini tak lagi terjangkau dari UI mana pun.
+   *
+   * CETAK dashboard VHMS tetap TERSEDIA lewat Ctrl+P / menu browser:
+   *   - blok `@media print` di index.html TIDAK di-scope ke kelas apa pun,
+   *     jadi tetap aktif; dan
+   *   - listener `beforeprint` global di index.html sudah menyetel
+   *     `document.title` lewat `getVHMSReportFileName()` (fungsi itu
+   *     DIPERTAHANKAN karena masih dipakai `vhms-render.js` & index.html).
+   * Jadi penghapusan ini tidak menghilangkan kemampuan, hanya kode mati.
+   * --------------------------------------------------------------------- */
 
   /* -----------------------------------------------------------------------
    * [FITUR 2026-10-05] Ekspor tabel "Equipment List" (katalog VHMS) ke Excel (CSV).
@@ -523,6 +1378,26 @@
   }
 
   /* -----------------------------------------------------------------------
+   * [FITUR 2026-10-12] EKSPOR LOG TELEMETRI ke CSV.
+   * ---------------------------------------------------------------------
+   * Menggantikan fungsi "Cetak Laporan" pada tabel Historical Telemetry Data
+   * Log. Pembentukan CSV didelegasikan ke `render.buildTelemetryCsv()` (logika
+   * murni, tanpa DOM — agar dapat diuji), sedangkan di sini hanya I/O unduh.
+   */
+  /** Ekspor log telemetri unit aktif ke berkas CSV. */
+  function exportTelemetryCsv() {
+    if (!state.current) { toast('Belum ada data untuk diekspor.', 'err'); return false; }
+    if (!render.buildTelemetryCsv) { toast('Modul ekspor tidak tersedia.', 'err'); return false; }
+    var out = render.buildTelemetryCsv(state.current);
+    if (!out) { toast('Gagal menyiapkan data ekspor.', 'err'); return false; }
+    if (!out.rows) { toast('Tidak ada baris (cek filter/pencarian).', 'err'); return false; }
+    var blob = new Blob([out.csv], { type: 'text/csv;charset=utf-8' });
+    downloadBlob(blob, out.filename);
+    toast('Export Data: ' + out.rows + ' baris \u00d7 ' + out.cols + ' kolom \u2192 ' + out.filename, 'ok');
+    return true;
+  }
+
+  /* -----------------------------------------------------------------------
    * Ekspor hasil peringkat criticalitas
    * --------------------------------------------------------------------- */
   /** Ganti sub-tab dalam halaman Unit Comparison (Peringkat | Per Parameter | Overlay). */
@@ -566,9 +1441,11 @@
    * [POIN 5] Reset filter katalog (status + pencarian) ke default.
    * --------------------------------------------------------------------- */
   function resetFleetFilters() {
-    render.setFleetState({ filter: 'ALL', search: '', page: 1 });
+    render.setFleetState({ filter: 'ALL', section: 'ALL', search: '', page: 1 });
     var s = document.getElementById('fleet-search');
     if (s) s.value = '';
+    var sec = document.getElementById('fleet-section');
+    if (sec) sec.value = 'ALL';
     render.renderFleetTable();
   }
 
@@ -638,6 +1515,10 @@
         // agar opsi Section langsung muncul tanpa perlu berpindah mode dulu.
         if (global.SOS_RENDER && global.SOS_RENDER.refreshSectionOptions) {
           try { global.SOS_RENDER.refreshSectionOptions(); } catch (eS) {}
+        }
+        // Segarkan juga dropdown Section tabel Equipment List (mode VHMS).
+        if (global.VHMS_RENDER && global.VHMS_RENDER.refreshSectionOptions) {
+          try { global.VHMS_RENDER.refreshSectionOptions(); } catch (eV) {}
         }
         // Perbarui tampilan yang sedang aktif
         if (state.view === 'fleet') render.renderFleet(fleet.fleetStats());
@@ -980,6 +1861,15 @@
       });
     }
 
+    // [FITUR 2026-10-06] Filter SECTION (dropdown di baris filter VHMS).
+    var fleetSection = document.getElementById('fleet-section');
+    if (fleetSection) {
+      fleetSection.addEventListener('change', function () {
+        render.setFleetState({ section: fleetSection.value, page: 1 });
+        render.renderFleetTable();
+      });
+    }
+
     // [POST-5 2026-10-03] Kontrol paginasi tabel Fleet VHMS.
     document.addEventListener('click', function (e) {
       var pg = e.target.closest('[data-fleet-page]');
@@ -988,6 +1878,100 @@
       if (!p || p < 1) return;
       render.setFleetState({ page: p });
       render.renderFleetTable();
+    });
+
+    // [FITUR 2026-10-09] Kontrol paginasi tabel RIWAYAT EVENT / ALARM.
+    document.addEventListener('click', function (e) {
+      var fp = e.target.closest('[data-fault-page]');
+      if (!fp || fp.disabled) return;
+      if (typeof render.setFaultPage === 'function') {
+        render.setFaultPage(fp.getAttribute('data-fault-page'));
+      }
+    });
+
+    // [FITUR 2026-10-11] Sort tabel RIWAYAT EVENT / ALARM lewat klik header.
+    // Abaikan klik pada input filter di dalam header (agar mengetik tidak
+    // memicu pengurutan).
+    document.addEventListener('click', function (e) {
+      if (e.target.closest && e.target.closest('.fault-col-filter')) return;
+      var th = e.target.closest('[data-fault-sort]');
+      if (!th) return;
+      if (typeof render.setFaultSort === 'function') {
+        render.setFaultSort(th.getAttribute('data-fault-sort'));
+      }
+    });
+    // Aksesibilitas: header dapat diaktifkan via keyboard Enter/Space.
+    document.addEventListener('keydown', function (e) {
+      if (e.key !== 'Enter' && e.key !== ' ') return;
+      var th = e.target.closest ? e.target.closest('th[data-fault-sort]') : null;
+      if (!th) return;
+      e.preventDefault();
+      if (typeof render.setFaultSort === 'function') {
+        render.setFaultSort(th.getAttribute('data-fault-sort'));
+      }
+    });
+
+    // [FITUR 2026-10-11] Filter kolom Keterangan tabel RIWAYAT EVENT / ALARM.
+    // Delegasi pada dokumen; pertahankan fokus & posisi kursor antar render.
+    document.addEventListener('input', function (e) {
+      var inp = e.target.closest ? e.target.closest('.fault-filter-input') : null;
+      if (!inp) return;
+      var val = inp.value;
+      var selStart = inp.selectionStart, selEnd = inp.selectionEnd;
+      if (typeof render.setFaultFilter === 'function') render.setFaultFilter(val);
+      var again = document.querySelector('#fault-panel .fault-filter-input');
+      if (again) {
+        again.focus();
+        try { again.setSelectionRange(selStart, selEnd); } catch (_) { /* noop */ }
+      }
+    });
+
+    // [FITUR 2026-10-11] Filter RENTANG TANGGAL panel Oper. Availability.
+    // Input tanggal: perbarui state lalu render ulang HANYA panel opava.
+    document.addEventListener('input', function (e) {
+      var inp = e.target.closest ? e.target.closest('.opava-date-input') : null;
+      if (!inp) return;
+      var key = inp.getAttribute('data-opava-range');   // 'from' | 'to'
+      if (!key) return;
+      var ex = global.VHMS_EXTRAS_RENDER;
+      if (!ex || typeof ex.setOpAvaRange !== 'function') return;
+      var patch = {}; patch[key] = inp.value;
+      ex.setOpAvaRange(patch);
+      // Kembalikan fokus ke input yang sama agar tidak meloncat saat mengetik.
+      var again = document.querySelector('#opava-panel .opava-date-input[data-opava-range="' + key + '"]');
+      if (again) again.focus();
+    });
+    // Preset cepat (30h / 90h / Semua / Reset).
+    document.addEventListener('click', function (e) {
+      // Tombol kalender: buka picker native (showPicker bila didukung).
+      var calBtn = e.target.closest ? e.target.closest('.opava-date-btn') : null;
+      if (calBtn) {
+        e.preventDefault();
+        var which = calBtn.getAttribute('data-opava-open');   // 'from' | 'to'
+        var input = document.querySelector('#opava-panel .opava-date-input[data-opava-range="' + which + '"]');
+        if (input) {
+          try {
+            if (typeof input.showPicker === 'function') input.showPicker();
+            else { input.focus(); input.click(); }
+          } catch (_) { input.focus(); }
+        }
+        return;
+      }
+      var btn = e.target.closest ? e.target.closest('.opava-quick') : null;
+      if (!btn) return;
+      var ex = global.VHMS_EXTRAS_RENDER;
+      if (ex && typeof ex.applyOpAvaQuick === 'function') {
+        ex.applyOpAvaQuick(btn.getAttribute('data-opava-quick'));
+      }
+    });
+    // Klik pada kolom tanggal juga membuka picker (memudahkan pengguna).
+    document.addEventListener('click', function (e) {
+      var inp = e.target.closest ? e.target.closest('.opava-date-input') : null;
+      if (!inp || typeof inp.showPicker !== 'function') return;
+      // Hanya pemicu eksplisit; jangan ganggu keyboard/pengetikan.
+      if (e.detail === 1) {
+        try { inp.showPicker(); } catch (_) { /* browser bisa menolak */ }
+      }
     });
 
     /* ---------------- [POIN 5] Filter cepat & penanda filter aktif ---------------- */
@@ -1180,9 +2164,10 @@
     // (#btn-report-1, ditangani di index.html). Cetak laporan tetap tersedia
     // lewat dialog cetak browser (Ctrl+P); judul dokumen diatur otomatis oleh
     // listener `beforeprint` di index.html.
-    // #btn-report (legacy, bila ada) tetap langsung mencetak.
+    // [FITUR 2026-10-12] #btn-report PADA TABEL LOG TELEMETRI kini "Export Data"
+    // -> meng-ekspor log telemetri unit aktif ke CSV (bukan lagi mencetak).
     var bLegacy = document.getElementById('btn-report');
-    if (bLegacy) bLegacy.addEventListener('click', exportReport);
+    if (bLegacy) bLegacy.addEventListener('click', exportTelemetryCsv);
 
     // Drag & drop di seluruh dokumen
     setupDragDrop();
@@ -1205,18 +2190,52 @@
         render.renderTable(state.current);
       });
     }
-    // Klik header untuk sort
-    document.querySelectorAll('#table-head th[data-sort]').forEach(function (th) {
-      th.style.cursor = 'pointer';
-      th.addEventListener('click', function () {
+    // [B-1 2026-10-13] Pemilih JENIS BERKAS. Berganti sumber mengubah
+    // STRUKTUR KOLOM, jadi cache kolom harus direset dan header di-render
+    // ulang — bukan hanya isi tabel.
+    var srcSel = document.getElementById('table-source');
+    if (srcSel) {
+      srcSel.addEventListener('change', function () {
         if (!state.current) return;
+        render.setTableState({ source: srcSel.value });
+        render.resetTableColumns();
+        render.renderTable(state.current);
+        render.renderTableHeader(state.current);
+      });
+    }
+    // Klik header untuk sort
+    // [FITUR 2026-10-12] EVENT DELEGATION pada `#table-head`.
+    // ---------------------------------------------------------------------
+    // Sebelumnya binding dilakukan dengan `querySelectorAll('#table-head
+    // th[data-sort]')` SEKALI saat init — tetapi header tabel di-GENERATE
+    // ULANG setiap render (renderTableHeader). Akibatnya handler hilang
+    // setelah render pertama & fitur sortir tak pernah berfungsi. Delegation
+    // di kontainer membuat klik tetap tertangkap walau <th> dibuat ulang.
+    var tableHead = document.getElementById('table-head');
+    if (tableHead) {
+      var doSort = function (th) {
+        if (!th || !state.current) return;
         var k = th.getAttribute('data-sort');
         var st = render.getTableState();
+        // Klik ulang kolom yang sama membalik arah; kolom baru default asc.
         var dir = (st.sortKey === k && st.sortDir === 'asc') ? 'desc' : 'asc';
         render.setTableState({ sortKey: k, sortDir: dir });
         render.renderTable(state.current);
+        render.renderTableHeader();
+      };
+      tableHead.addEventListener('click', function (e) {
+        var th = e.target && e.target.closest ? e.target.closest('th[data-sort]') : null;
+        doSort(th);
       });
-    });
+      // Aksesibilitas keyboard: Enter / Space pada header ter-fokus.
+      tableHead.addEventListener('keydown', function (e) {
+        if (e.key !== 'Enter' && e.key !== ' ' && e.key !== 'Spacebar') return;
+        var th = e.target && e.target.closest ? e.target.closest('th[data-sort]') : null;
+        if (!th) return;
+        e.preventDefault();
+        doSort(th);
+      });
+    }
 
     // Dropzone besar di halaman sambutan
     var dz = document.getElementById('dropzone');
@@ -1237,6 +2256,17 @@
         if (global.console && console.warn) console.warn('[VHMS_APP] gagal re-analisa setelah restore:', e && e.message);
       }
       toast('Data VHMS sebelumnya dipulihkan dari sesi browser (' + fleet.count() + ' unit).', 'info');
+      // [B2 2026-10-10] Beri tahu bila ada unit yang DIBUANG karena datanya
+      // tercemar bug fallback lama — operator perlu mengunggah ulang berkasnya.
+      try {
+        var purged = (fleet.getLastPurged ? fleet.getLastPurged() : []) || [];
+        if (purged.length) {
+          var names = purged.map(function (p) { return p.sourceFile || p.id; }).join(', ');
+          toast('⚠ ' + purged.length + ' unit dibuang saat pemulihan karena datanya ' +
+            'tercemar bug lama (nilai parameter tidak sah): ' + names +
+            '. Silakan unggah ulang berkas trend unit tersebut.', 'err', 9000);
+        }
+      } catch (e2) { /* izinkan gagal senyap — bukan jalur kritis */ }
       showFleetView();
     }
   }
@@ -1299,7 +2329,6 @@
     showComparisonView: showComparisonView,
     showCrossView: showCrossView,
     clearAllData: clearAllData,
-    exportReport: exportReport,
     getVHMSReportFileName: getVHMSReportFileName,
     switchTab: switchTab,
     switchCompTab: switchCompTab,
@@ -1308,7 +2337,13 @@
     /** [FITUR 2026-10-05] Ekspor Equipment List (katalog VHMS) ke Excel (CSV). */
     exportFleetCsv: exportFleetCsv,
     buildFleetCsv: buildFleetCsv,
-    getState: function () { return state; }
+    /** [FITUR 2026-10-12] Ekspor LOG TELEMETRI unit aktif ke CSV. */
+    exportTelemetryCsv: exportTelemetryCsv,
+    getState: function () { return state; },
+    /** [T4.5] ID unit yang sedang dibuka di tampilan detail (atau null). */
+    getCurrentUnitId: function () {
+      return (state && state.view === 'unit') ? (state.currentUnitId || null) : null;
+    }
   };
 
   if (document.readyState === 'loading') {

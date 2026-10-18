@@ -28,6 +28,11 @@
   var units = {};        // id -> unit
   var order = [];        // urutan penambahan id
 
+  /* [B2 2026-10-10] Unit yang dibuang pada restore terakhir karena datanya
+   * tercemar bug fallback lama (tipe non-trend + usedFallback). Diisi ulang
+   * setiap `restore()`; dibaca UI lewat `getLastPurged()`. */
+  var lastPurged = [];
+
   /* [PERSISTENSI] Kunci sessionStorage untuk armada VHMS.
    * Data telemetri bertahan saat reload (dalam tab yang sama) agar pengguna
    * tidak perlu meng-upload ulang. Dihapus total lewat tombol "Kosongkan". */
@@ -90,6 +95,12 @@
       records: prep.records
     });
     analysis._clcCut = prep.cut;
+    // [B2 2026-10-10] Bawa metadata tipe berkas. WAJIB di sini (bukan hanya di
+    // pemanggil) karena `analyze()` menimpa seluruh objek analysis — setiap
+    // field yang ditambahkan pemanggil SEBELUM add() akan hilang. Titik ini
+    // adalah satu-satunya tempat yang bertahan (dipakai add() & restore()).
+    analysis.dataType = parsed.dataType || '';
+    analysis.usedFallback = parsed.usedFallback === true;
     return analysis;
   }
 
@@ -116,30 +127,188 @@
       id: u.id,
       sourceFile: a.sourceFile || '',
       mergeCount: u.mergeCount || 1,
+      // [B2 2026-10-10] Simpan `dataType` + `usedFallback` agar saat restore
+      // dapat MENDETEKSI unit yang datanya tercemar oleh bug fallback lama
+      // (tipe non-'40' yang memakai pemetaan kolom posisional). Tanpa keduanya,
+      // unit tersimpan tidak dapat dibedakan dari unit sah.
+      dataType: a.dataType || u.dataType || '',
+      usedFallback: (a.usedFallback === true) || (u.usedFallback === true),
+      // [T7.2 2026-10-08] Riwayat fault & ringkasannya IKUT dipersistensi agar
+      // pilar EVENT (T4) dan gerbang kualitas data (T2) tetap hidup setelah
+      // reload. `faultSummary` kecil; `faultEvents` diagregasi bila >200 event.
+      faultSummary: u.faultSummary || null,
+      faultEvents: compactFaultEvents(u.faultEvents),
+      maskReport: u.maskReport || null,
+      // [T8 2026-10-09] Matriks beban clutch (HD785). Kecil & tanpa SMR,
+      // jadi aman dipersistensi apa adanya. `null` bila unit tak punya.
+      clutchMatrix: u.clutchMatrix || null,
+      // [T12 2026-10-10] Sumber data PC2000. Load Map & Op. Availability
+      // kecil (matriks 8×17 / 100 jendela). Snapshot lebih besar
+      // (162×51) -> disimpan TERPOTONG (lihat `compactSnapshot`) agar
+      // kuota sessionStorage tidak jebol bila banyak unit.
+      loadMap: u.loadMap || null,
+      opAvailability: u.opAvailability || null,
+      // [D375A 2026-10-13] Matriks perpindahan gigi (7x7). Kecil & tanpa SMR,
+      // jadi aman dipersistensi apa adanya — sama seperti clutchMatrix.
+      shiftMap: u.shiftMap || null,
+      // [HD785 2026-10-14] Matriks beban per gigi (13 berkas x 8x9) & peta
+      // duty (5 berkas). Keduanya kecil & tanpa SMR -> aman apa adanya.
+      // 13 x 72 sel = 936 angka; jauh di bawah snapshot (162x51) yang justru
+      // harus dipotong. Tidak perlu `compact*`.
+      gearLoad: u.gearLoad || null,
+      dutyMap: u.dutyMap || null,
+      snapshots: compactSnapshots(u.snapshots),
       parsed: { records: records, meta: a.meta || {}, columns: a.columns || [] }
     };
   }
 
-  /** Tulis seluruh armada ke sessionStorage (best-effort, abaikan bila penuh). */
-  function _persist() {
+  /** Ambang jumlah event sebelum `faultEvents` diagregasi per (code, bulan). */
+  var FAULT_EVENT_COMPACT_LIMIT = 200;
+
+  /**
+   * [T7.2] Ringkas `faultEvents` untuk penyimpanan bila terlalu besar.
+   * 600 event x N unit bisa melebihi kuota sessionStorage. Di atas ambang,
+   * kita simpan agregat per (code, bulan) — cukup untuk tampilan daftar
+   * event tanpa membawa seluruh 600 baris.
+   * @param {array} events
+   * @returns {array} event asli, atau agregat ber-tanda `_aggregated: true`
+   */
+  function compactFaultEvents(events) {
+    if (!events || !events.length) return [];
+    if (events.length <= FAULT_EVENT_COMPACT_LIMIT) return events;
+
+    var buckets = {};
+    events.forEach(function (e) {
+      if (!e || !e.code) return;
+      var bulan = '';
+      if (e.fromEpoch !== null && e.fromEpoch !== undefined) {
+        var d = new Date(e.fromEpoch * 1000);
+        if (!isNaN(d.getTime())) bulan = d.getUTCFullYear() + '-' + pad2(d.getUTCMonth() + 1);
+      }
+      var key = e.code + '|' + bulan;
+      if (!buckets[key]) {
+        buckets[key] = {
+          _aggregated: true, code: e.code, msg: e.msg || '', month: bulan,
+          fromEpoch: e.fromEpoch, toEpoch: e.toEpoch,
+          count: 0, occurrences: 0, active: false, durationSec: 0
+        };
+      }
+      var b = buckets[key];
+      b.count += (e.count === null || e.count === undefined) ? 1 : e.count;
+      b.occurrences += 1;
+      if (e.active) { b.active = true; b.toEpoch = null; }
+      if (e.durationSec !== null && e.durationSec !== undefined) b.durationSec += e.durationSec;
+      if (e.fromEpoch !== null && e.fromEpoch !== undefined && (b.fromEpoch === null || e.fromEpoch < b.fromEpoch)) {
+        b.fromEpoch = e.fromEpoch;
+      }
+    });
+    var out = [];
+    Object.keys(buckets).forEach(function (k) { out.push(buckets[k]); });
+    out.sort(function (a, b) { return (b.count || 0) - (a.count || 0); });
+    return out;
+  }
+
+  function pad2(n) { return (n < 10 ? '0' : '') + n; }
+
+  /* -----------------------------------------------------------------------
+   * [T12 2026-10-10] Kompresi snapshot untuk persistensi.
+   * ---------------------------------------------------------------------
+   * Snapshot berisi ~162 titik × ~51 kolom — cukup besar bila banyak unit.
+   * Untuk persistensi kita simpan hanya bagian yang dipakai UI & analisis:
+   *   - `time` + seri kolom yang PENTING (puncak + pemicu + stuck),
+   *   - ringkasan & daftar kolom stuck tetap utuh,
+   *   - `series` penuh DIBUANG bila melebihi batas (dapat dimuat ulang
+   *     dengan mengunggah berkasnya kembali).
+   * Struktur kunci TIDAK diubah agar pemanggil tetap bekerja.
+   * --------------------------------------------------------------------- */
+  var SNAPSHOT_SERIES_LIMIT = 80;    // titik per kolom yang disimpan
+  var SNAPSHOT_MAX_SNAPSHOTS = 4;    // per unit
+
+  function compactSnapshots(snaps) {
+    if (!snaps || !snaps.length) return [];
+    var list = snaps.slice(-SNAPSHOT_MAX_SNAPSHOTS);
+    return list.map(function (s) {
+      var out = {
+        dataType: s.dataType, dataTitle: s.dataTitle,
+        trigger: s.trigger, samplingTime: s.samplingTime,
+        columns: s.columns, units: s.units, rates: s.rates, divisors: s.divisors,
+        rowCount: s.rowCount, stuck: s.stuck, summary: s.summary,
+        warnings: s.warnings || [], _key: s._key,
+        sourceFile: s.sourceFile || '', attachedAt: s.attachedAt || null,
+        _expanded: false
+      };
+      // Simpan seri hanya bila total titik di bawah batas total.
+      var totalPts = s.rowCount * (s.columns ? s.columns.length : 0);
+      if (totalPts <= SNAPSHOT_SERIES_LIMIT * 8 && s.series) {
+        out.series = s.series;
+        out.time = s.time;
+        out._expanded = true;
+      } else if (s.series) {
+        // Simpan sebagian: kolom yang punya puncak/stuck + sumbu waktu.
+        var keep = {};
+        var want = {};
+        (s.summary && s.summary.stuckColumns ? s.summary.stuckColumns : []).forEach(function (k) { want[k] = true; });
+        // [2026-10-12] `peaks` kini memuat SEMUA kolom, jadi hanya kolom
+        // bertanda `key` yang serinya disimpan — kalau tidak, kompresi batal
+        // dan kuota sessionStorage jebol.
+        if (s.summary && s.summary.peaks) {
+          Object.keys(s.summary.peaks).forEach(function (k) {
+            if (s.summary.peaks[k] && s.summary.peaks[k].key) want[k] = true;
+          });
+        }
+        (s.columns || []).forEach(function (k, i) {
+          if (i === 0 || want[k]) keep[k] = (s.series[k] || []).slice(0, SNAPSHOT_SERIES_LIMIT);
+        });
+        out.series = keep;
+        out.time = (s.time || []).slice(0, SNAPSHOT_SERIES_LIMIT);
+        out._expanded = false;
+      }
+      return out;
+    });
+  }
+
+  /* -----------------------------------------------------------------------
+   * [T7.2 2026-10-08] Akses storage lewat helper.
+   * ---------------------------------------------------------------------
+   * Sebelumnya kode memakai `sessionStorage` TELANJANG, sehingga modul ini
+   * tidak dapat diuji di Node (tanpa global tersebut) dan uji persistensi
+   * selalu "hijau palsu". Helper ini memakai global bila ada, lalu jatuh ke
+   * localStorage — perilaku di browser TIDAK berubah sedikit pun.
+   * --------------------------------------------------------------------- */
+  function _store() {
     try {
-      if (!order.length) { sessionStorage.removeItem(STORAGE_KEY); return; }
+      if (typeof sessionStorage !== 'undefined' && sessionStorage) return sessionStorage;
+    } catch (e) { /* lanjut ke fallback */ }
+    try {
+      var s = global.sessionStorage || global.localStorage;
+      return s || null;
+    } catch (e2) { return null; }
+  }
+
+  /** Tulis seluruh armada ke storage (best-effort, abaikan bila penuh). */
+  function _persist() {
+    var st = _store();
+    if (!st) return;
+    try {
+      if (!order.length) { st.removeItem(STORAGE_KEY); return; }
       var data = { units: order.map(function (id) { return serializeUnit(units[id]); }), ts: Date.now() };
-      sessionStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+      st.setItem(STORAGE_KEY, JSON.stringify(data));
     } catch (e) {
-      // sessionStorage penuh / tidak tersedia — jangan ganggu alur utama.
-      if (global.console && console.warn) console.warn('Gagal menyimpan armada VHMS ke sessionStorage:', e && e.message);
+      // storage penuh / tidak tersedia — jangan ganggu alur utama.
+      if (global.console && console.warn) console.warn('Gagal menyimpan armada VHMS ke storage:', e && e.message);
     }
   }
 
   /**
-   * Pulihkan armada dari sessionStorage dengan MENGANALISIS ULANG tiap unit.
+   * Pulihkan armada dari storage dengan MENGANALISIS ULANG tiap unit.
    * Dipanggil sekali saat inisialisasi aplikasi.
    * @returns {boolean} true bila ada unit yang berhasil dipulihkan
    */
   function restore() {
+    var st = _store();
+    if (!st) return false;
     var raw;
-    try { raw = sessionStorage.getItem(STORAGE_KEY); } catch (e) { return false; }
+    try { raw = st.getItem(STORAGE_KEY); } catch (e) { return false; }
     if (!raw) return false;
     var data;
     try { data = JSON.parse(raw); } catch (e) { return false; }
@@ -150,9 +319,40 @@
 
     units = {}; order = [];
     var restored = 0;
+    var purged = [];
     data.units.forEach(function (su) {
       try {
-        var analysis = _analyzeParsed(su.parsed);
+        // [B2 2026-10-10 — MIGRASI] Buang unit yang datanya tercemar bug
+        // fallback lama SEBELUM dianalisis.
+        //
+        // LATAR: sebelum T1, `VHMS_PARSER` memakai pemetaan kolom POSISIONAL
+        // untuk tipe yang bukan trend mesin (`30` Load Map, `60` Snapshot,
+        // dst). Akibatnya unit menyimpan `blowbyMax`/`coolantTemp`/
+        // `oilPressHMin` berisi ANGKA FREKUENSI load map — nilai palsu yang
+        // merusak ranking armada secara senyap.
+        //
+        // GERBANG: unit hanya dibuang bila KEDUA syarat terpenuhi:
+        //   1. `usedFallback === true` (parser memang jatuh ke posisional), DAN
+        //   2. `dataType` BUKAN '40'/'' (bukan trend mesin yang sah).
+        // Trend mesin ('40') yang memakai fallback TETAP SAH (sebagian
+        // eksport lama memang tanpa baris nama kolom) -> TIDAK dibuang.
+        //
+        // Bila `usedFallback` tidak tersimpan (data pra-B2), JANGAN membuang
+        // apa pun — lebih baik membiarkan data lama daripada menghapus data
+        // sah karena metadata yang tidak ada.
+        var dt = String(su.dataType || '').trim();
+        var isTrendType = (dt === '' || dt === '40');
+        if (su.usedFallback === true && !isTrendType) {
+          purged.push({ id: su.id, dataType: dt, sourceFile: su.sourceFile || '' });
+          return;   // lewati unit tercemar
+        }
+
+        var analysis = _analyzeParsed({
+          meta: su.parsed.meta, columns: su.parsed.columns, units: su.parsed.units,
+          records: su.parsed.records,
+          // [B2] Bawa metadata tersimpan (bila ada; data pra-B2 -> ''/false).
+          dataType: su.dataType, usedFallback: su.usedFallback
+        });
         analysis.sourceFile = su.sourceFile || '';
         var id = buildUnitId(analysis, su.sourceFile);
         var unit = {
@@ -161,17 +361,59 @@
           rawRecords: su.parsed.records || [],
           summaryRow: buildSummaryRow(id, analysis),
           loadedAt: Date.now(),
-          mergeCount: su.mergeCount || 1
+          mergeCount: su.mergeCount || 1,
+          dataType: analysis.dataType,
+          usedFallback: analysis.usedFallback,
+          // [T7.2] Pulihkan riwayat fault + ringkasan + laporan mask.
+          faultEvents: su.faultEvents || null,
+          faultSummary: su.faultSummary || null,
+          maskReport: su.maskReport || null,
+          // [T8 2026-10-09] Pulihkan matriks beban clutch (HD785).
+          clutchMatrix: su.clutchMatrix || null,
+          // [T12 2026-10-10] Pulihkan sumber data PC2000.
+          loadMap: su.loadMap || null,
+          opAvailability: su.opAvailability || null,
+          // [D375A 2026-10-13] Pulihkan matriks perpindahan gigi.
+          shiftMap: su.shiftMap || null,
+          // [HD785 2026-10-14] Pulihkan beban per gigi & peta duty.
+          gearLoad: su.gearLoad || null,
+          dutyMap: su.dutyMap || null,
+          snapshots: su.snapshots || []
         };
         if (!units[id]) order.push(id);
         units[id] = unit;
+        // Terapkan kembali gerbang kualitas data atas records yang dipulihkan.
+        if (unit.faultEvents && unit.faultEvents.length) _applyMaskForUnit(unit);
+        // [T7.2] faultSummary dapat dihitung ulang bila hilang, tetapi bila
+        // ada kita PAKAI yang tersimpan (sudah terkalibrasi saat upload).
+        if (!unit.faultSummary && unit.faultEvents && global.VHMS_FAULT) {
+          unit.faultSummary = global.VHMS_FAULT.summarize(unit.faultEvents, {
+            smrRange: analysis.smrRange || null, maskReport: unit.maskReport
+          });
+        }
         restored++;
       } catch (e) {
         if (global.console && console.warn) console.warn('Gagal memulihkan unit VHMS:', e && e.message);
       }
     });
+    // Laporkan bila ada unit dibuang (jangan senyap) — pemanggil dapat
+    // menampilkan toast agar operator tahu perlu unggah ulang.
+    if (purged.length && global.console && console.warn) {
+      console.warn('[B2] ' + purged.length + ' unit dibuang karena data tercemar ' +
+        'fallback lama: ' + purged.map(function (p) { return (p.sourceFile || p.id) + '(' + p.dataType + ')'; }).join(', '));
+    }
+    lastPurged = purged;
+    _persist();
     return restored > 0;
   }
+
+  /**
+   * [B2 2026-10-10] Daftar unit yang dibuang saat restore terakhir karena
+   * datanya tercemar bug fallback lama. Dipakai UI untuk memberi tahu operator
+   * bahwa berkas perlu diunggah ulang.
+   * @returns {array} [{ id, dataType, sourceFile }]
+   */
+  function getLastPurged() { return lastPurged.slice(); }
 
   /* -----------------------------------------------------------------------
    * Identitas unit
@@ -213,6 +455,25 @@
    * --------------------------------------------------------------------- */
 
   /**
+   * [T4.5] Ambil ringkasan fault sebuah unit untuk katalog.
+   * Dibaca dari `units[id]` (sumber kanonik) — BUKAN dihitung ulang, agar
+   * katalog tidak memicu analitik mahal pada 200+ unit.
+   * @returns {object|null}
+   */
+  function _faultSummaryFor(id, analysis) {
+    var u = units[id];
+    if (u && u.faultSummary) return u.faultSummary;
+    // Saat buildSummaryRow dipanggil dari add() untuk unit BARU, `units[id]`
+    // belum terisi. Pada kasus itu kita pakai event yang dititipkan.
+    if (analysis && analysis._faultEvents && global.VHMS_FAULT) {
+      return global.VHMS_FAULT.summarize(analysis._faultEvents, {
+        smrRange: analysis.smrRange || null
+      });
+    }
+    return null;
+  }
+
+  /**
    * Susun objek ringkasan yang cukup untuk katalog Home.
    * Menyimpan hanya angka yang dibutuhkan, BUKAN seluruh record.
    */
@@ -235,6 +496,13 @@
     // Anomali paling berat (untuk highlight di katalog)
     var top = (analysis.anomalies || [])[0] || null;
 
+    // [FIX 2026-10-08] Ringkasan fault dibaca SEKALI di sini lalu dipakai
+    // untuk dua hal: skor prioritas katalog (rankScore) dan sel Event/Alarm.
+    // Dulu rankScore memanggil scoreUnit() TANPA faultSummary sehingga skor
+    // katalog berbeda dengan skor halaman Unit Comparison pada unit ber-fault.
+    var faultSum = null;
+    try { faultSum = _faultSummaryFor(id, analysis); } catch (e) { faultSum = null; }
+
     // [POIN 6] Flag pilar Engine critical — dipakai untuk mengurutkan katalog
     // agar unit dengan Engine critical berada paling atas.
     var engineCritical = 0, engineWarning = 0;
@@ -255,7 +523,7 @@
       var R = global.VHMS_RANKING;
       if (R && typeof R.scoreUnit === 'function') {
         try {
-          var sc = R.scoreUnit(id, analysis);
+          var sc = R.scoreUnit(id, analysis, faultSum || undefined);
           if (sc && typeof sc.score === 'number' && !isNaN(sc.score)) return sc.score;
         } catch (e) { /* fallback di bawah */ }
       }
@@ -297,6 +565,22 @@
       engineCritical: engineCritical,
       engineWarning: engineWarning,
       rankScore: rankScore,
+      // [T4.5 2026-10-08] Baris "Event/Alarm" pada katalog: jumlah event,
+      // kode paling sering, dan penanda data tidak layak (R4 — bukan skor 0).
+      fault: (function () {
+        var fs = faultSum;
+        if (!fs) return null;
+        return {
+          eventCount: fs.eventCount,
+          recurrence: fs.recurrence,
+          activeCount: fs.activeCount,
+          distinctCodes: fs.distinctCodes,
+          topCode: fs.topCode ? fs.topCode.code : null,
+          topMsg: fs.topCode ? fs.topCode.msg : null,
+          faultScore: fs.faultScore,
+          dataUnfit: !!fs.dataUnfit
+        };
+      })(),
       topAnomaly: top ? { title: top.title, param: top.param, status: top.status, value: top.value, unit: top.unit } : null,
 
       // [RUL] Sisa jam operasi terpendek (paling urgent)
@@ -341,6 +625,9 @@
     // Cari unit existing berdasarkan SN + Model (kunci identitas unit).
     var existingId = findUnitIdBySerial(analysis);
     var id, merged = false, addedRecords = 0;
+    // [T7.2] Data fault opsional yang dititipkan pemanggil (vhms-app) pada
+    // objek analysis sebelum add(). Tidak mengubah analitik trend.
+    var incomingFaultEvents = analysis._faultEvents || null;
 
     if (existingId) {
       id = existingId;
@@ -354,14 +641,23 @@
       // [FIX 2026-10-01] Record TANPA SMR valid JANGAN dibuang — dedup hanya
       // berlaku untuk SMR valid. Record tanpa SMR dipertahankan (ditambahkan
       // di akhir) agar tidak ada data hilang saat merge/upload masal.
+      // [B-5 2026-10-13] Kunci dedup = SMR + JENIS BERKAS SUMBER (`_src`).
+      // Sebelumnya kunci hanya SMR, sehingga record Chassis Trend ('86') dan
+      // T/M Trend ('81') yang kebetulan ber-SMR SAMA saling MENIMPA — satu
+      // dari keduanya hilang diam-diam padahal isinya parameter yang sama
+      // sekali berbeda. Dedup tetap bekerja seperti semula di dalam satu
+      // jenis berkas (upload ulang berkas yang sama -> yang baru menang).
       var bySmr = {};
       var noSmr = [];
+      function keyOf(r) {
+        return String(r.smr) + '|' + (r._src === undefined || r._src === null ? '' : r._src);
+      }
       function addRecords(list, isNew) {
         list.forEach(function (r) {
           if (!r) return;
           var hasSmr = (r.smr !== null && r.smr !== undefined && !isNaN(r.smr));
           if (hasSmr) {
-            bySmr[String(r.smr)] = r;         // SMR sama -> yang diproses terakhir menang
+            bySmr[keyOf(r)] = r;              // SMR+sumber sama -> yang diproses terakhir menang
           } else if (isNew) {
             noSmr.push(r);                     // record baru tanpa SMR -> tetap disimpan
           }
@@ -395,7 +691,10 @@
           meta: analysis.meta,
           columns: analysis.columns,
           units: analysis.units,
-          records: mergedRecords
+          records: mergedRecords,
+          // [B2] Pertahankan metadata tipe berkas saat merge.
+          dataType: analysis.dataType,
+          usedFallback: analysis.usedFallback
         });
         newAnalysis.sourceFile = analysis.sourceFile;
       } else {
@@ -419,7 +718,9 @@
       // [CLC] Analisa dengan potong pilar diterapkan; simpan RAW untuk re-analisa.
       var rawRecs = analysis.records || [];
       var newA = (global.VHMS_ANALYTICS && global.VHMS_ANALYTICS.analyze)
-        ? _analyzeParsed({ meta: analysis.meta, columns: analysis.columns, units: analysis.units, records: rawRecs })
+        ? _analyzeParsed({ meta: analysis.meta, columns: analysis.columns, units: analysis.units, records: rawRecs,
+                           // [B2] Bawa metadata tipe berkas.
+                           dataType: analysis.dataType, usedFallback: analysis.usedFallback })
         : analysis;
       newA.sourceFile = analysis.sourceFile;
       var unit = {
@@ -434,8 +735,95 @@
       units[id] = unit;
     }
 
+    // [T7.2] Lampirkan & hitung ulang data fault untuk unit ini, lalu
+    // terapkan gerbang kualitas data (T2) pada records unit tsb.
+    if (incomingFaultEvents) {
+      _attachFault(id, incomingFaultEvents);
+    } else if (units[id].faultEvents && units[id].faultEvents.length) {
+      // Unit hasil merge/gabung: hitung ulang mask dengan records terbaru.
+      _applyMaskForUnit(units[id]);
+    }
+    // [FIX 2026-10-08] summaryRow di atas disusun SEBELUM mask & faultSummary
+    // final tersedia (dataUnfit baru diketahui setelah applyFaultMask). Susun
+    // ulang agar skor katalog & sel Event/Alarm memakai angka pasca-gerbang.
+    if (units[id].faultEvents && units[id].faultEvents.length) {
+      units[id].summaryRow = buildSummaryRow(id, units[id].analysis);
+    }
+
     _persist();
     return { id: id, merged: merged, addedRecords: addedRecords };
+  }
+
+  /* -----------------------------------------------------------------------
+   * [T7.2 2026-10-08] INTEGRASI RIWAYAT FAULT KE UNIT
+   * ---------------------------------------------------------------------
+   * Dipisah dari add() agar juga dipakai restore() & reanalyzeAll().
+   * Alur:
+   *   1) simpan faultEvents pada unit,
+   *   2) bangun peta SMR<->epoch BILA memungkinkan (T3),
+   *   3) hitung faultSummary via VHMS_FAULT (T4),
+   *   4) jalankan applyFaultMask (T2) atas records unit.
+   * Semua langkah BERSIFAT OPSIONAL: bila modul pendukung tidak ada, unit
+   * tetap berperilaku seperti sebelumnya.
+   * --------------------------------------------------------------------- */
+  function _attachFault(id, faultEvents) {
+    var u = units[id];
+    if (!u) return;
+    u.faultEvents = (faultEvents || []).slice();
+
+    var faultMod = global.VHMS_FAULT;
+    var crossMod = global.VHMS_CROSS;
+    var valMod = global.VHMS_VALIDATE;
+
+    // 2) Peta SMR<->epoch (T3) — hanya dari trend utama unit ini.
+    var mapInfo = null;
+    if (crossMod && typeof crossMod.smrEpochMapFor === 'function' && u.analysis) {
+      mapInfo = crossMod.smrEpochMapFor(u.analysis, { faultEvents: u.faultEvents });
+      u.smrEpochNotice = mapInfo.message || null;
+    }
+
+    // 3) Ringkasan pilar EVENT (T4).
+    if (faultMod && typeof faultMod.summarize === 'function') {
+      u.faultSummary = faultMod.summarize(u.faultEvents, {
+        smrRange: (u.analysis && u.analysis.smrRange) ? u.analysis.smrRange : null,
+        maskReport: u.maskReport
+      });
+    }
+    _applyMaskForUnit(u, mapInfo);
+  }
+
+  /** [T2] Terapkan gerbang kualitas data pada records sebuah unit. */
+  function _applyMaskForUnit(u, mapInfo) {
+    var valMod = global.VHMS_VALIDATE;
+    if (!u || !u.faultEvents || !u.faultEvents.length) return;
+    if (!valMod || typeof valMod.applyFaultMask !== 'function') return;
+    var analysis = u.analysis;
+    if (!analysis || !analysis.records) return;
+
+    // Peta dipakai bila ada (mask dibatasi window fault); bila tidak ->
+    // applyFaultMask() sendiri yang memberlakukan mask unit-wide + melapor.
+    var map = (mapInfo && mapInfo.map) ? mapInfo.map : null;
+    var res = valMod.applyFaultMask(analysis.records, u.faultEvents, { map: map });
+    u.maskReport = res.report;
+    // Simpan ringkasan pada analysis agar renderer (T2.5) dapat membacanya.
+    analysis.faultMask = res.mask;
+    analysis.faultMaskReport = res.report;
+
+    // Ringkasan diperbarui agar laporan validasi menyertakan jumlah param
+    // yang di-mask (T2.4) tanpa menimpa laporan validasi asli.
+    if (analysis.validationReport) {
+      analysis.validationReport.maskCount = res.report.maskCount;
+      analysis.validationReport.faultMaskWarnings = res.report.warnings;
+    }
+
+    // [T4] faultScore dihitung ulang karena maskReport memengaruhi dataUnfit.
+    var faultMod = global.VHMS_FAULT;
+    if (faultMod && typeof faultMod.summarize === 'function') {
+      u.faultSummary = faultMod.summarize(u.faultEvents, {
+        smrRange: analysis.smrRange || null,
+        maskReport: u.maskReport
+      });
+    }
   }
 
   /**
@@ -463,6 +851,234 @@
 
   function get(id) { return units[id] || null; }
   function getAnalysis(id) { return units[id] ? units[id].analysis : null; }
+
+  /* -----------------------------------------------------------------------
+   * [T4 / T7.2 2026-10-08] Akses data riwayat fault sebuah unit.
+   * --------------------------------------------------------------------- */
+  /** Ringkasan pilar EVENT (VHMS_FAULT.summarize) atau null. */
+  function getFaultSummary(id) { return units[id] ? (units[id].faultSummary || null) : null; }
+  /** Daftar event fault mentah (sudah diurutkan Count desc) atau []. */
+  function getFaultEvents(id) {
+    var u = units[id];
+    if (!u || !u.faultEvents) return [];
+    // Salin + urutkan agar pemanggil tidak merusak urutan internal.
+    return u.faultEvents.slice().sort(function (a, b) {
+      return (b.count || 0) - (a.count || 0);
+    });
+  }
+  /** Laporan gerbang kualitas data (T2) untuk sebuah unit, atau null. */
+  function getMaskReport(id) { return units[id] ? (units[id].maskReport || null) : null; }
+  /** Catatan kenapa SMR<->epoch tidak tersedia (T3), atau null. */
+  function getSmrEpochNotice(id) { return units[id] ? (units[id].smrEpochNotice || null) : null; }
+
+  /* -----------------------------------------------------------------------
+   * [T8 2026-10-09] Matriks beban clutch (HD785) sebuah unit.
+   * ---------------------------------------------------------------------
+   * Hasil VHMS_CLUTCH.parseClutchMatrix(), atau null bila unit tidak punya.
+   * Bentuknya `{ slip, thermal }` — dua berkas saling melengkapi.
+   * --------------------------------------------------------------------- */
+  function getClutchMatrix(id) { return units[id] ? (units[id].clutchMatrix || null) : null; }
+
+  /**
+   * Lampirkan satu matriks clutch ke unit. Matriks `slip` ('DA') dan
+   * `thermal` ('D9') disimpan berdampingan; memuat ulang berkas yang sama
+   * akan MENIMPA yang lama (data terbaru menang), bukan menumpuk.
+   *
+   * @param {string} id      id unit (SUDAH ada)
+   * @param {object} matrix  hasil parseClutchMatrix()
+   * @param {string} [sourceName]
+   * @returns {object|null}  referensi unit.clutchMatrix, atau null bila gagal
+   * --------------------------------------------------------------------- */
+  function attachClutchMatrix(id, matrix, sourceName) {
+    var u = units[id];
+    if (!u || !matrix) return null;
+
+    var slot = (matrix.kind === 'thermal') ? 'thermal'
+             : (matrix.kind === 'slip') ? 'slip'
+             : 'slip';   // kind tak dikenal -> perlakukan sebagai slip (paling umum)
+
+    if (!u.clutchMatrix) u.clutchMatrix = { slip: null, thermal: null };
+    matrix.sourceFile = sourceName || '';
+    matrix.attachedAt = Date.now();
+    u.clutchMatrix[slot] = matrix;
+    u.clutchMatrix.updatedAt = Date.now();
+
+    _persist();
+    return u.clutchMatrix;
+  }
+
+  /* -----------------------------------------------------------------------
+   * [PC2000 2026-10-10 — T12] SUMBER DATA TAMBAHAN (Load Map / Snapshot /
+   * Op. Availability). Ketiganya menempel pada unit yang SUDAH ADA, sama
+   * seperti matriks clutch. Tidak pernah membuat unit baru.
+   * --------------------------------------------------------------------- */
+
+  /**
+   * Load Map: `loadm` (beban mesin) / `loadmop` (torsi ALL) / `loadmwork`
+   * (torsi WORK). Disimpan per-KIND agar pasangan ALL & WORK berdampingan.
+   * Memuat ulang kind yang sama MENIMPA yang lama.
+   */
+  function attachLoadMap(id, res, sourceName) {
+    var u = units[id];
+    if (!u || !res || !res.matrix || !res.matrix.length) return null;
+    var lm = global.VHMS_LOADMAP;
+    if (!u.loadMap) u.loadMap = {};
+
+    var kind = res.kind || (lm && lm.KIND_ENGINE_LOAD) || 'engineLoad';
+    res.sourceFile = sourceName || '';
+    res.attachedAt = Date.now();
+    u.loadMap[kind] = res;
+    u.loadMap.updatedAt = Date.now();
+
+    // Hitung selisih ALL − WORK bila kedua sisi kini tersedia (T9).
+    var kAll = (lm && lm.KIND_TORQUE_ALL) || 'torqueAll';
+    var kWork = (lm && lm.KIND_TORQUE_WORK) || 'torqueWork';
+    if (lm && lm.torqueDelta && u.loadMap[kAll] && u.loadMap[kWork]) {
+      try {
+        u.loadMap.torqueDelta = lm.torqueDelta(u.loadMap[kAll], u.loadMap[kWork]);
+      } catch (e) { u.loadMap.torqueDelta = null; }
+    }
+
+    _persist();
+    return u.loadMap;
+  }
+
+  var getLoadMap = function (id) { return units[id] ? (units[id].loadMap || null) : null; };
+
+  /**
+   * Snapshot: boleh BANYAK (satu per pemicu). Kunci identitas = SMR + Kode
+   * pemicu (R8) karena dua snapshot sah berbagi SMR yang sama.
+   * Memuat ulang kunci yang sama MENIMPA yang lama.
+   */
+  function attachSnapshot(id, res, sourceName) {
+    var u = units[id];
+    if (!u || !res || !res.rowCount) return null;
+    var snap = global.VHMS_SNAPSHOT;
+    if (!Array.isArray(u.snapshots)) u.snapshots = [];
+
+    res.sourceFile = sourceName || '';
+    res.attachedAt = Date.now();
+    var key = snap ? snap.snapshotKey(res) : String(res.trigger && res.trigger.smr);
+
+    var idx = -1;
+    for (var i = 0; i < u.snapshots.length; i++) {
+      if (u.snapshots[i]._key === key) { idx = i; break; }
+    }
+    res._key = key;
+    if (idx >= 0) u.snapshots[idx] = res; else u.snapshots.push(res);
+
+    _persist();
+    return u.snapshots;
+  }
+
+  var getSnapshots = function (id) { return units[id] ? (units[id].snapshots || []) : []; };
+
+  /**
+   * Operating Availability: satu per unit (bila ada beberapa berkas, yang
+   * terbaru menang — sama seperti fault).
+   */
+  function attachOpAva(id, res, sourceName) {
+    var u = units[id];
+    if (!u || !res || !res.windows || !res.windows.length) return null;
+    res.sourceFile = sourceName || '';
+    res.attachedAt = Date.now();
+    u.opAvailability = res;
+    _persist();
+    return u.opAvailability;
+  }
+
+  var getOpAva = function (id) { return units[id] ? (units[id].opAvailability || null) : null; };
+
+  /**
+   * [D375A 2026-10-13] Matriks perpindahan gigi transmisi (T/M Shift Change
+   * Map, tipe '83'). Seperti clutch: satu matriks per unit; memuat ulang
+   * MENIMPA yang lama (ekspor terbaru = snapshot terkini).
+   * @param {string} id
+   * @param {object} res hasil VHMS_SHIFTMAP.parse()
+   * @param {string} sourceName
+   * @returns {object|null} matriks tersimpan, atau null bila tidak layak
+   */
+  function attachShiftMap(id, res, sourceName) {
+    var u = units[id];
+    if (!u || !res || !res.indicators || !res.matrix || !res.matrix.length) return null;
+    res.sourceFile = sourceName || '';
+    res.attachedAt = Date.now();
+    u.shiftMap = res;
+    _persist();
+    return u.shiftMap;
+  }
+
+  var getShiftMap = function (id) { return units[id] ? (units[id].shiftMap || null) : null; };
+
+  /* -----------------------------------------------------------------------
+   * [HD785 2026-10-14] MATRIKS BEBAN PER GIGI (13 berkas).
+   * ---------------------------------------------------------------------
+   * Berbeda dari clutch/shiftMap yang satu berkas per unit: di sini ada
+   * SAMPAI 13 berkas yang BERSAMA-SAMA membentuk satu gambaran. Karena itu
+   * disimpan sebagai peta ber-kunci `"<mode>:<gigi>"` dan ringkasannya
+   * DIHITUNG ULANG setiap kali ada berkas baru menempel — sehingga pangsa
+   * L/U vs T/C selalu mencerminkan berkas yang BENAR-BENAR ada, bukan
+   * angka basi dari unggahan sebelumnya.
+   *
+   * Memuat ulang kunci yang sama MENIMPA (ekspor terbaru menang).
+   * --------------------------------------------------------------------- */
+  function attachGearLoad(id, res, sourceName) {
+    var u = units[id];
+    if (!u || !res || !res.matrix || !res.matrix.length || !res.totalSec) return null;
+    var gl = global.VHMS_GEARLOAD;
+    if (!gl) return null;
+
+    if (!u.gearLoad) u.gearLoad = { byKey: {}, summary: null, updatedAt: 0 };
+    res.sourceFile = sourceName || '';
+    res.attachedAt = Date.now();
+    u.gearLoad.byKey[gl.gearKey(res)] = res;
+
+    // Ringkasan WAJIB dihitung ulang dari SELURUH peta, bukan ditambahkan
+    // secara inkremental — kalau inkremental, menimpa sebuah berkas akan
+    // menghitung ganda jamnya.
+    try { u.gearLoad.summary = gl.summarize(u.gearLoad.byKey); }
+    catch (e) { u.gearLoad.summary = null; }
+    u.gearLoad.updatedAt = Date.now();
+
+    _persist();
+    return u.gearLoad;
+  }
+
+  var getGearLoad = function (id) { return units[id] ? (units[id].gearLoad || null) : null; };
+
+  /* -----------------------------------------------------------------------
+   * [HD785 2026-10-14] PETA DUTY OPERASI (5 berkas, 4 jenis analisis).
+   * ---------------------------------------------------------------------
+   * Disimpan per-KIND agar pasangan BERMUATAN ('52') & KOSONG ('54')
+   * berdampingan — sama polanya dengan `loadMap` yang memasangkan
+   * torqueAll & torqueWork. Selisihnya dihitung otomatis begitu kedua sisi
+   * tersedia (pola `torqueDelta`).
+   * --------------------------------------------------------------------- */
+  function attachDutyMap(id, res, sourceName) {
+    var u = units[id];
+    if (!u || !res || !res.kind || !res.matrix || !res.matrix.length) return null;
+    var dm = global.VHMS_DUTYMAP;
+    if (!dm) return null;
+
+    if (!u.dutyMap) u.dutyMap = {};
+    res.sourceFile = sourceName || '';
+    res.attachedAt = Date.now();
+    u.dutyMap[res.kind] = res;
+
+    // Selisih BERMUATAN - KOSONG bila kedua sisi kini ada.
+    var kL = dm.KIND_LOADED, kU = dm.KIND_UNLOADED;
+    if (u.dutyMap[kL] && u.dutyMap[kU]) {
+      try { u.dutyMap.loadedDelta = dm.loadedDelta(u.dutyMap[kL], u.dutyMap[kU]); }
+      catch (e) { u.dutyMap.loadedDelta = null; }
+    }
+    u.dutyMap.updatedAt = Date.now();
+
+    _persist();
+    return u.dutyMap;
+  }
+
+  var getDutyMap = function (id) { return units[id] ? (units[id].dutyMap || null) : null; };
+
   function count() { return order.length; }
   function ids() { return order.slice(); }
 
@@ -476,7 +1092,8 @@
   function clear() {
     units = {};
     order = [];
-    try { sessionStorage.removeItem(STORAGE_KEY); } catch (e) { /* ignore */ }
+    var st = _store();
+    if (st) { try { st.removeItem(STORAGE_KEY); } catch (e) { /* ignore */ } }
   }
 
   /**
@@ -580,6 +1197,9 @@
         });
         analysis.sourceFile = u.analysis.sourceFile || '';
         u.analysis = analysis;
+        // [T7.2] Reanalisa ulang TIDAK boleh menghapus gerbang kualitas data:
+        // records baru belum ber-_masked, jadi terapkan lagi setelah analitik.
+        if (u.faultEvents && u.faultEvents.length) _applyMaskForUnit(u);
         u.summaryRow = buildSummaryRow(id, analysis);
         n++;
       } catch (e) {
@@ -595,6 +1215,29 @@
     add: add,
     get: get,
     getAnalysis: getAnalysis,
+    // [T4/T7.2] Akses riwayat fault
+    getFaultSummary: getFaultSummary,
+    getFaultEvents: getFaultEvents,
+    getMaskReport: getMaskReport,
+    getSmrEpochNotice: getSmrEpochNotice,
+    // [T8 2026-10-09] Matriks beban clutch (HD785)
+    getClutchMatrix: getClutchMatrix,
+    attachClutchMatrix: attachClutchMatrix,
+    // [T12 2026-10-10] Sumber data PC2000.
+    getLoadMap: getLoadMap,
+    attachLoadMap: attachLoadMap,
+    getSnapshots: getSnapshots,
+    attachSnapshot: attachSnapshot,
+    getOpAva: getOpAva,
+    attachOpAva: attachOpAva,
+    // [D375A 2026-10-13] Matriks perpindahan gigi transmisi (tipe '83').
+    getShiftMap: getShiftMap,
+    attachShiftMap: attachShiftMap,
+    // [HD785 2026-10-14] Beban per gigi (13 tipe) & peta duty operasi (5 tipe).
+    getGearLoad: getGearLoad,
+    attachGearLoad: attachGearLoad,
+    getDutyMap: getDutyMap,
+    attachDutyMap: attachDutyMap,
     count: count,
     ids: ids,
     rows: rows,
@@ -605,6 +1248,8 @@
     restore: restore,
     persist: _persist,
     reanalyzeAll: reanalyzeAll,
+    // [B2 2026-10-10] Unit yang dibuang saat restore (data tercemar lama).
+    getLastPurged: getLastPurged,
     applyClcChange: function () { return reanalyzeAll(); }
   };
 

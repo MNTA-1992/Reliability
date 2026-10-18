@@ -17,16 +17,16 @@
        tunggu DNS/timeout). Bila berkas font lokal belum ada, rantai fallback
        font sistem di css/vhms-dashboard.css ('Segoe UI', system-ui, ...) yang
        dipakai, sehingga tampilan tetap baik tanpa jaringan. -->
-  <link rel="stylesheet" href="vendor/fonts/fonts.css?v=20261006e">
+  <link rel="stylesheet" href="vendor/fonts/fonts.css?v=20261013f">
 
   <!-- [FIX AUDIT 2026-10-04 — G-2] Cache-busting memakai SATU stempel build
        yang sama untuk semua aset (CSS + JS): ?v=YYYYMMDD<huruf>.
        ATURAN: setiap kali ada perubahan file apa pun, ganti SELURUH stempel
        sekaligus (cari-ganti `?v=`). Versi per-file yang berbeda-beda terbukti
        mudah terlewat sehingga pengguna mendapat campuran versi lama & baru. -->
-  <link rel="stylesheet" href="css/vhms-dashboard.css?v=20261006e">
-  <link rel="stylesheet" href="css/portfolio.css?v=20261006e">
-  <link rel="stylesheet" href="css/portfolio-formal.css?v=20261006e">
+  <link rel="stylesheet" href="css/vhms-dashboard.css?v=20261014a">
+  <link rel="stylesheet" href="css/portfolio.css?v=20261013f">
+  <link rel="stylesheet" href="css/portfolio-formal.css?v=20261013f">
   <style>
     /* Gaya khusus cetak laporan */
     @media print {
@@ -125,11 +125,201 @@
             <button class="btn btn-primary" id="btn-pick"><i class="fa-solid fa-folder-open"></i> Pilih File CSV (bisa banyak)</button>
           </div>
           <input type="file" id="file-input" accept=".csv,.txt" multiple class="hidden" aria-label="Pilih berkas CSV VHMS untuk diunggah">
-          <p style="margin-top:18px;font-size:11px;color:var(--text-dim)">
-            Format didukung: export <em>Trend Analysis</em> dari VHMS Komatsu (blok <code>[Common Header]</code> &amp; <code>[Data]</code>).
-            Identitas unit diambil otomatis dari <strong>Machine Serial No.</strong> &amp; <strong>Model</strong>.
-            File diproses sepenuhnya di browser — tidak ada data yang diunggah ke server.
-          </p>
+
+          <!-- ============================================================
+               PANDUAN UNGGAH PER MODEL — ditulis EKSPLISIT karena tiap
+               model punya kumpulan berkas & nama yang berbeda. Tabel ini
+               adalah satu-satunya tempat pengguna bisa tahu "file apa yang
+               harus saya siapkan". Bila kode menambah dukungan tipe baru,
+               TABEL INI WAJIB DIPERBARUI.
+               ============================================================ -->
+          <div class="upload-guide">
+            <div class="upload-guide-head">
+              <i class="fa-solid fa-circle-info"></i>
+              <span>File yang dapat diunggah &amp; penamaannya</span>
+            </div>
+
+            <p class="upload-guide-note">
+              Semua file diekspor dari <strong>VHMS Komatsu</strong> (blok <code>[Common Header]</code>
+              &amp; <code>[Data]</code>). Tipe file <strong>dikenali otomatis</strong> dari isinya —
+              nama boleh diubah, tetapi <strong>pola penamaan di bawah disarankan</strong>
+              agar mudah ditelusuri. Satuan SMR boleh besar (mis. <code>35165.4</code>).
+            </p>
+
+            <table class="upload-guide-table">
+              <colgroup>
+                <col class="ug-c-model"><col class="ug-c-jenis"><col class="ug-c-file">
+                <col class="ug-c-wajib"><col class="ug-c-fungsi">
+              </colgroup>
+              <!-- [O-4 2026-10-12] `scope="col"` ditambahkan: ini satu-satunya
+                   tabel STATIS yang masih kehilangan scope (4 sisanya adalah
+                   heatmap/matrix yang header-nya digenerate JS). -->
+              <thead>
+                <tr>
+                  <th scope="col">Model</th>
+                  <th scope="col">Jenis Data</th>
+                  <th scope="col">Nama File Disarankan</th>
+                  <th scope="col">Wajib?</th>
+                  <th scope="col">Fungsi</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr class="ug-group">
+                  <td colspan="5"><i class="fa-solid fa-truck-monster"></i> HD785 (Dump Truck)</td>
+                </tr>
+                <tr>
+                  <td rowspan="6" class="ug-model">HD785</td>
+                  <td>Trend mesin</td>
+                  <td><code>trend0.CSV</code></td>
+                  <td><span class="ug-req">Disarankan</span></td>
+                  <td>Parameter mesin &amp; hidrolik. <strong>Membuat unit baru</strong> di armada.</td>
+                </tr>
+                <tr>
+                  <td>Chassis trend</td>
+                  <td><code>chas_trend0.CSV</code></td>
+                  <td><span class="ug-opt">Opsional</span></td>
+                  <td>Fill time clutch, duty retarder, gas buang 4 grup silinder.</td>
+                </tr>
+                <tr>
+                  <td>Riwayat fault</td>
+                  <td><code>fault0.CSV</code></td>
+                  <td><span class="ug-opt">Opsional</span></td>
+                  <td>Riwayat alarm + gerbang kualitas data (sensor rusak).</td>
+                </tr>
+                <tr>
+                  <td>Clutch (2 file)</td>
+                  <td><code>clutch_slip.CSV</code><br><code>clutch_therm.CSV</code></td>
+                  <td><span class="ug-opt">Opsional</span></td>
+                  <td>Matriks slip time &amp; beban termal per posisi clutch.</td>
+                </tr>
+                <tr>
+                  <td>Beban per gigi (13 file)</td>
+                  <td><code>tmf1lu.CSV</code> … <code>tmf7lu.CSV</code>,<br><code>tmr2lu.CSV</code>, <code>CSVDATA_ca.CSV</code>,<br><code>loadmtmf1.CSV</code> … <code>loadmtmr2.CSV</code></td>
+                  <td><span class="ug-opt">Opsional</span></td>
+                  <td>Jam operasi tiap gigi, dipisah lock-up vs torque converter.</td>
+                </tr>
+                <tr>
+                  <td>Peta duty operasi (5 file)</td>
+                  <td><code>CSVDATA_52.CSV</code>, <code>_54</code>, <code>_56</code>,<br><code>CSVDATA_57.CSV</code>, <code>_58</code></td>
+                  <td><span class="ug-opt">Opsional</span></td>
+                  <td>Beban bermuatan vs kosong, retarder, kebiasaan warm-up.</td>
+                </tr>
+
+                <tr class="ug-group">
+                  <td colspan="5"><i class="fa-solid fa-tractor"></i> D375A (Bulldozer)</td>
+                </tr>
+                <tr>
+                  <td rowspan="4" class="ug-model">D375A</td>
+                  <td>Trend mesin</td>
+                  <td><code>trend0.CSV</code></td>
+                  <td><span class="ug-req">Disarankan</span></td>
+                  <td>Parameter mesin, torque converter, aktivitas dozing. <strong>Membuat unit baru.</strong></td>
+                </tr>
+                <tr>
+                  <td>T/M trend</td>
+                  <td><code>tm_trend0.CSV</code></td>
+                  <td><span class="ug-opt">Opsional</span></td>
+                  <td>Clutch fill time &amp; duty termal oli T/C.</td>
+                </tr>
+                <tr>
+                  <td>Load map</td>
+                  <td><code>loadm0.CSV</code></td>
+                  <td><span class="ug-opt">Opsional</span></td>
+                  <td>Pola pembebanan mesin (zona LUG) — Engine Speed &amp; Fuel Injection.</td>
+                </tr>
+                <tr>
+                  <td>Shift change map</td>
+                  <td><code>tm_sft0.CSV</code></td>
+                  <td><span class="ug-opt">Opsional</span></td>
+                  <td>Pola perpindahan gigi transmisi (matriks From→To) seumur hidup.</td>
+                </tr>
+
+                <tr>
+                  <td class="ug-model">Semua</td>
+                  <td>Riwayat fault</td>
+                  <td><code>fault0.CSV</code></td>
+                  <td><span class="ug-opt">Opsional</span></td>
+                  <td>Untuk model apa pun — berisi kode alarm &amp; durasinya.</td>
+                </tr>
+
+                <tr class="ug-group">
+                  <td colspan="5"><i class="fa-solid fa-truck-monster"></i> PC2000 (Excavator)</td>
+                </tr>
+                <tr>
+                  <td rowspan="5" class="ug-model">PC2000</td>
+                  <td>Trend mesin</td>
+                  <td><code>trend0.CSV</code></td>
+                  <td><span class="ug-req">Disarankan</span></td>
+                  <td>Parameter mesin &amp; hidrolik. <strong>Membuat unit baru.</strong></td>
+                </tr>
+                <tr>
+                  <td>Chassis trend</td>
+                  <td><code>chas_trend0.CSV</code></td>
+                  <td><span class="ug-opt">Opsional</span></td>
+                  <td>Duty gas buang 4 grup silinder (% waktu &gt;700/750/800&nbsp;°C).</td>
+                </tr>
+                <tr>
+                  <td>Load map (2 file)</td>
+                  <td><code>loadm0.CSV</code><br><code>loadmop0.CSV</code><br><code>loadmwork0.CSV</code></td>
+                  <td><span class="ug-opt">Opsional</span></td>
+                  <td>Pola pembebanan mesin (zona LUG) &amp; beban torsi pompa all vs work.</td>
+                </tr>
+                <tr>
+                  <td>Snapshot</td>
+                  <td><code>snap00.CSV</code><br><code>snap01.CSV</code></td>
+                  <td><span class="ug-opt">Opsional</span></td>
+                  <td>Waveform ±140&nbsp;s saat alarm + deteksi sensor stuck.</td>
+                </tr>
+                <tr>
+                  <td>Op. availability</td>
+                  <td><code>op_ava0.CSV</code></td>
+                  <td><span class="ug-opt">Opsional</span></td>
+                  <td>Utilisasi, duty work/swing/travel, deteksi data basi.</td>
+                </tr>
+
+                <tr class="ug-group">
+                  <td colspan="5"><i class="fa-solid fa-circle-info"></i> Catatan khusus PC2000</td>
+                </tr>
+                <tr>
+                  <td class="ug-model">PC2000</td>
+                  <td>Ditolak sengaja</td>
+                  <td><code>loadm1.CSV</code> (<em>Temporary Load Map</em>)</td>
+                  <td><span class="ug-opt">Jangan</span></td>
+                  <td>Isinya duplikat dari <code>loadm0.CSV</code> pada ekspor contoh — diabaikan dengan pesan, bukan gagal senyap.</td>
+                </tr>
+              </tbody>
+            </table>
+
+            <ul class="upload-guide-rules">
+              <li>
+                <i class="fa-solid fa-triangle-exclamation"></i>
+                <strong>File pelengkap tidak membuat unit baru.</strong>
+                <code>chas_trend0</code>, <code>fault0</code>, <code>clutch_*</code>,
+                <code>tm_trend0</code>, <code>loadm0</code>, dan <code>tm_sft0</code> hanya <em>melengkapi</em>
+                unit yang sudah ada.
+                Muat <code>trend0.CSV</code> bersamaan, atau lebih dulu.
+                Muat <code>trend0.CSV</code> bersamaan, atau lebih dulu.
+              </li>
+              <li>
+                <i class="fa-solid fa-user-check"></i>
+                Unit dicocokkan otomatis lewat
+                <strong>Machine Serial No. + Machine Model</strong> di dalam file —
+                bukan dari nama file. Jadi nama file salah pun tetap terbaca benar,
+                tetapi pola di atas memudahkan pelacakan.
+              </li>
+              <li>
+                <i class="fa-solid fa-sitemap"></i>
+                Satu unit boleh punya <strong>beberapa file dengan rentang SMR berbeda</strong>
+                (mis. <code>chas_trend0</code> sampai SMR 31.000 sementara <code>fault0</code>
+                mencatat sampai 35.000). Ini normal — file diekspor di waktu berbeda.
+              </li>
+              <li>
+                <i class="fa-solid fa-shield-halved"></i>
+                <strong>Privasi:</strong> file diproses sepenuhnya di browser.
+                <strong>Tidak ada data yang diunggah ke server.</strong>
+              </li>
+            </ul>
+          </div>
         </div>
       </div>
     </section>
@@ -185,6 +375,10 @@
           <span style="font-size:11px;text-transform:uppercase;letter-spacing:.8px;color:var(--text-mute);font-weight:600">
             <i class="fa-solid fa-filter"></i> Filter Cepat:
           </span>
+          <label for="fleet-section" class="sr-only">Saring berdasarkan Section</label>
+          <select id="fleet-section" title="Saring berdasarkan Section unit (diambil dari data Lifetime / Nomor Lambung)" aria-label="Saring berdasarkan Section" style="max-width:200px">
+            <option value="ALL">Semua Section</option>
+          </select>
           <button class="filter-chip" data-quick-filter="ALL"><i class="fa-solid fa-layer-group"></i> Semua <span class="fc-count" data-count="ALL">0</span></button>
           <button class="filter-chip is-critical" data-quick-filter="CRITICAL"><i class="fa-solid fa-triangle-exclamation"></i> Critical <span class="fc-count" data-count="CRITICAL">0</span></button>
           <button class="filter-chip is-warning" data-quick-filter="CAUTION"><i class="fa-solid fa-circle-exclamation"></i> Caution <span class="fc-count" data-count="CAUTION">0</span></button>
@@ -209,9 +403,10 @@
                 <th class="center" scope="col" data-fleet-sort="engOilTempMax">Engine Oil Temp Max (&deg;C)</th>
                 <th class="center" scope="col" data-fleet-sort="coolantMax">Coolant Temp Max (&deg;C)</th>
                 <th class="center" scope="col" data-fleet-sort="hydTempMax">Hyd Temp Max</th>
-                <th class="center" scope="col">Anomali</th>
-                <th scope="col">Perhatian Utama</th>
-                <th class="center" scope="col">Sisa Operasi</th>
+                <th class="center" scope="col" data-fleet-sort="anomalyCount" title="Jumlah parameter yang melewati ambang pada unit ini">Anomali</th>
+                <th class="center" scope="col" data-fleet-sort="faultEvents" title="Riwayat fault dari fault0.CSV — jumlah event &amp; kode terbanyak">Event/Alarm</th>
+                <th scope="col" data-fleet-sort="topAnomaly">Perhatian Utama</th>
+                <th class="center" scope="col" data-fleet-sort="urgentRUL">Sisa Operasi</th>
                 <th class="center" scope="col">Aksi</th>
               </tr>
             </thead>
@@ -603,17 +798,17 @@
             </div>
           </div>
           <div class="table-scroll">
-            <table class="data">
+            <table class="data" id="cross-pairs-table">
               <caption class="sr-only">Daftar parameter korelasi VHMS versus SOS dengan kekuatan hubungan</caption>
               <thead>
                 <tr>
-                  <th scope="col">Parameter VHMS</th>
-                  <th scope="col">Parameter SOS</th>
-                  <th class="center" scope="col">n</th>
-                  <th class="center" scope="col">Pearson r</th>
-                  <th class="center" scope="col">Basis</th>
-                  <th class="center" scope="col">Kekuatan</th>
-                  <th scope="col">Hipotesis / Root Cause</th>
+                  <th scope="col" data-pairs-sort="vhmsLabel" role="button" tabindex="0">Parameter VHMS</th>
+                  <th scope="col" data-pairs-sort="sosLabel" role="button" tabindex="0">Parameter SOS</th>
+                  <th class="center" scope="col" data-pairs-sort="n" role="button" tabindex="0">n</th>
+                  <th class="center" scope="col" data-pairs-sort="r" role="button" tabindex="0">Pearson r</th>
+                  <th class="center" scope="col" data-pairs-sort="basis" role="button" tabindex="0">Basis</th>
+                  <th class="center" scope="col" data-pairs-sort="strength" role="button" tabindex="0">Kekuatan</th>
+                  <th scope="col" data-pairs-sort="hypothesis" role="button" tabindex="0">Hipotesis / Root Cause</th>
                 </tr>
               </thead>
               <tbody id="cross-pairs-body"></tbody>
@@ -686,6 +881,30 @@
               <div class="panel" id="timeline-panel"></div>
             </div>
           </div>
+          <!-- [T10.3 2026-10-09] Panel matriks beban clutch HD785.
+               Hanya tampil bila unit punya clutch_slip/clutch_therm (opt-in by data).
+               [REVISI 2026-10-09] Diletakkan DI ATAS panel Riwayat Event/Alarm. -->
+          <div class="panel hidden" id="clutch-panel" style="margin-top:18px"></div>
+          <!-- [D375A 2026-10-13] Matriks perpindahan gigi transmisi
+               (tm_sft0.CSV, tipe 83). Opt-in: hanya tampil bila unit punya. -->
+          <div class="panel hidden" id="shiftmap-panel" style="margin-top:18px"></div>
+          <!-- [T4.5] Panel riwayat event/alarm + gerbang kualitas data.
+               Hanya tampil bila unit punya fault0.CSV (opt-in by data). -->
+          <div class="panel hidden" id="fault-panel" style="margin-top:18px"></div>
+          <!-- [T13 2026-10-10] Panel sumber data PC2000 (PC2000 saja).
+               Tampil HANYA bila unit punya berkas terkait (opt-in by data):
+                 - profil beban mesin & torsi pompa (loadm*)
+                 - snapshot alarm + deteksi sensor stuck (snap*)
+                 - utilisasi & duty mode (op_ava0) -->
+          <div class="panel hidden" id="loadmap-panel" style="margin-top:18px"></div>
+          <div class="panel hidden" id="opava-panel" style="margin-top:18px"></div>
+          <div class="panel hidden" id="snapshot-panel" style="margin-top:18px"></div>
+          <!-- [HD785 2026-10-14] Panel data tambahan HD785. Opt-in by data:
+               - gearload : 13 matriks beban per gigi (lock-up vs torque converter)
+               - dutymap  : beban mesin bermuatan vs kosong, retarder, warm-up
+               Model lain tidak akan melihat kedua panel ini. -->
+          <div class="panel hidden" id="gearload-panel" style="margin-top:18px"></div>
+          <div class="panel hidden" id="dutymap-panel" style="margin-top:18px"></div>
         </div>
       </div>
 
@@ -698,6 +917,12 @@
               <p class="panel-sub" id="table-count">—</p>
             </div>
             <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
+              <!-- [B-1 2026-10-13] Pemilih JENIS BERKAS. Satu unit dapat
+                   menerima berkas VHMS berstruktur berbeda (mis. Chassis
+                   Trend + T/M Trend); barisnya TIDAK dapat digabung karena
+                   SMR-nya berbeda. Tampilkan satu jenis pada satu waktu.
+                   Disembunyikan otomatis bila unit hanya punya satu jenis. -->
+              <select id="table-source" class="hidden" aria-label="Pilih jenis berkas VHMS yang ditampilkan"></select>
               <input type="search" id="table-search" placeholder="Cari SMR / tanggal / status..." style="width:220px" aria-label="Cari data teknis unit berdasarkan SMR, tanggal, atau status">
               <select id="table-filter" aria-label="Saring data teknis berdasarkan status kesehatan">
                 <option value="ALL">Semua Status</option>
@@ -705,7 +930,10 @@
                 <option value="CAUTION">Caution</option>
                 <option value="NORMAL">Normal</option>
               </select>
-              <button class="btn btn-primary" id="btn-report"><i class="fa-solid fa-print"></i> Cetak Laporan</button>
+              <!-- [2026-10-12] Tombol ini meng-ekspor log telemetri ke CSV.
+                   Cetak laporan tetap tersedia lewat Ctrl+P / menu browser
+                   (aturan @media print tidak di-scope, judul berkas otomatis). -->
+              <button class="btn btn-primary" id="btn-report" title="Ekspor log telemetri unit ini ke CSV (mengikuti filter, pencarian, dan urutan yang aktif). Cetak laporan: Ctrl+P."><i class="fa-solid fa-file-csv"></i> Export Data</button>
             </div>
           </div>
           <div class="table-scroll">
@@ -1184,7 +1412,7 @@
           <div class="table-scroll" style="max-height:460px">
             <table class="data" id="vhms-threshold-table">
               <caption class="sr-only">Threshold default VHMS per keluarga model unit</caption>
-              <thead><tr><th scope="col">Parameter</th><th class="center" scope="col">Warn</th><th class="center" scope="col">Crit</th><th class="center" scope="col">Mode</th><th scope="col">Label</th></tr></thead>
+              <thead><tr><th scope="col">Parameter</th><th class="center" scope="col">Warn</th><th class="center" scope="col">Crit</th><th class="center" scope="col">Mode</th><th scope="col">Label</th><th scope="col">Sumber / Asal Nilai</th></tr></thead>
               <tbody id="vhms-threshold-body"></tbody>
             </table>
           </div>
@@ -1381,49 +1609,82 @@
   <!-- ==================== SCRIPT ==================== -->
   <!-- [G-2] Stempel build tunggal — lihat catatan di <head>. Urutan lapisan:
        util ? config ? parser ? validate ? analytics ? store ? render ? app. -->
-  <script src="js/csv-util.js?v=20261006e"></script>
-  <script src="js/ui-util.js?v=20261006e"></script>
-  <script src="js/model-match.js?v=20261006e"></script>
-  <script src="js/app-header.js?v=20261006e"></script>
-  <script src="js/searchable-select.js?v=20261006e"></script>
-  <script src="js/vhms-config.js?v=20261006e"></script>
-  <script src="js/vhms-profiles.js?v=20261006e"></script>
-  <script src="js/vhms-knowledge.js?v=20261006e"></script>
-  <script src="js/vhms-parser.js?v=20261006e"></script>
-  <script src="js/vhms-validate.js?v=20261006e"></script>
-  <script src="js/vhms-unit-db.js?v=20261006e"></script>
-  <script src="js/vhms-analytics.js?v=20261006e"></script>
-  <script src="js/vhms-fleet-store.js?v=20261006e"></script>
-  <script src="js/vhms-ranking.js?v=20261006e"></script>
-  <script src="js/vhms-render.js?v=20261006e"></script>
-  <script src="js/vhms-app.js?v=20261006e"></script>
+  <script src="js/csv-util.js?v=20261013f"></script>
+  <script src="js/ui-util.js?v=20261013f"></script>
+  <script src="js/model-match.js?v=20261013f"></script>
+  <script src="js/app-header.js?v=20261013f"></script>
+  <script src="js/searchable-select.js?v=20261013f"></script>
+  <script src="js/vhms-config.js?v=20261013f"></script>
+  <script src="js/vhms-profiles.js?v=20261013f"></script>
+  <script src="js/vhms-knowledge.js?v=20261013f"></script>
+  <script src="js/vhms-parser.js?v=20261013f"></script>
+  <script src="js/vhms-fault-parser.js?v=20261013f"></script>
+  <!-- [T5/T12 2026-10-09] Matriks beban clutch HD785 (clutch_slip/therm).
+       Bergantung pada csv-util + vhms-config, dan dipakai oleh
+       vhms-validate (gerbang kewarasan) serta vhms-app (upload). -->
+  <script src="js/vhms-clutch.js?v=20261013f"></script>
+  <!-- [D375A 2026-10-13] Matriks perpindahan gigi transmisi (tm_sft0.CSV,
+       tipe '83'). Matriks 7x7 From->To; menempel ke unit yang sudah ada
+       (tidak membuat unit baru), sama seperti clutch. -->
+  <script src="js/vhms-shiftmap.js?v=20261013f"></script>
+  <!-- [T2 2026-10-10] Pembaca blok [Section] Komatsu — SATU sumber untuk
+       semua parser VHMS. Dipakai modul baru (opava/loadmap/snapshot) dan
+       dapat dipakai modul lama secara bertahap. -->
+  <script src="js/komatsu-section.js?v=20261013f"></script>
+  <!-- [T8-T11 2026-10-10] Sumber data tambahan PC2000:
+       Load Map (30/7F/7E), Snapshot (60/61), Operating Availability (90).
+       Semuanya menempel ke unit yang sudah ada (tidak membuat unit baru). -->
+  <script src="js/vhms-loadmap.js?v=20261013f"></script>
+  <!-- [2026-10-12] Kamus referensi kolom snapshot (kolom Result). Pola sama
+       dengan vhms-knowledge/sos-knowledge: satu sumber kebenaran untuk
+       dimensi, satuan, ambang, dan rujukan manual. -->
+  <script src="js/vhms-snapshot-knowledge.js?v=20261013f"></script>
+  <script src="js/vhms-snapshot.js?v=20261013f"></script>
+  <script src="js/vhms-opava.js?v=20261013f"></script>
+  <!-- [HD785 2026-10-14] Data tambahan HD785. KEDUANYA meminjam
+       `resolveBands` (dan dutymap juga meminjam ambang zona) dari
+       vhms-loadmap.js, jadi WAJIB dimuat SESUDAHNYA. -->
+  <script src="js/vhms-gearload.js?v=20261014a"></script>
+  <script src="js/vhms-dutymap.js?v=20261014a"></script>
+  <script src="js/vhms-validate.js?v=20261013f"></script>
+  <script src="js/vhms-unit-db.js?v=20261013f"></script>
+  <script src="js/vhms-analytics.js?v=20261013f"></script>
+  <script src="js/vhms-fleet-store.js?v=20261013f"></script>
+  <script src="js/vhms-fault.js?v=20261013f"></script>
+  <script src="js/vhms-ranking.js?v=20261013f"></script>
+  <script src="js/vhms-render.js?v=20261013f"></script>
+  <!-- [T13 2026-10-10] Panel sumber data PC2000 (load map/snapshot/op-ava). -->
+  <script src="js/vhms-extras-render.js?v=20261013f"></script>
+  <!-- [HD785 2026-10-14] Panel beban per gigi & peta duty operasi. -->
+  <script src="js/vhms-powertrain-render.js?v=20261014a"></script>
+  <script src="js/vhms-app.js?v=20261014a"></script>
 
   <!-- SOS Oil Analysis Module -->
-  <script src="js/sos-config.js?v=20261006e"></script>
-  <script src="js/sos-parser.js?v=20261006e"></script>
-  <script src="js/sos-analytics.js?v=20261006e"></script>
-  <script src="js/sos-store.js?v=20261006e"></script>
-  <script src="js/sos-render.js?v=20261006e"></script>
-  <script src="js/sos-app.js?v=20261006e"></script>
+  <script src="js/sos-config.js?v=20261013f"></script>
+  <script src="js/sos-parser.js?v=20261013f"></script>
+  <script src="js/sos-analytics.js?v=20261013f"></script>
+  <script src="js/sos-store.js?v=20261013f"></script>
+  <script src="js/sos-render.js?v=20261013f"></script>
+  <script src="js/sos-app.js?v=20261013f"></script>
 
   <!-- Cross Analysis (VHMS x SOS) — setelah kedua modul dimuat -->
-  <script src="js/vhms-cross.js?v=20261006e"></script>
-  <script src="js/vhms-cross-render.js?v=20261006e"></script>
+  <script src="js/vhms-cross.js?v=20261013f"></script>
+  <script src="js/vhms-cross-render.js?v=20261013f"></script>
 
   <!-- Portofolio Reliability: parser data pendukung + store + KB + render.
        Dimuat SETELAH SOS & VHMS karena bergantung pada keduanya. -->
-  <script src="js/lifetime-parser.js?v=20261006e"></script>
-  <script src="js/topup-parser.js?v=20261006e"></script>
-  <script src="js/section-parser.js?v=20261006e"></script>
-  <script src="js/portfolio-store.js?v=20261006e"></script>
-  <script src="js/component-life.js?v=20261006e"></script>
-  <script src="js/sos-knowledge.js?v=20261006e"></script>
-  <script src="js/portfolio-render.js?v=20261006e"></script>
-  <script src="js/portfolio-followup.js?v=20261006e"></script>
-  <script src="js/portfolio-app.js?v=20261006e"></script>
+  <script src="js/lifetime-parser.js?v=20261013f"></script>
+  <script src="js/topup-parser.js?v=20261013f"></script>
+  <script src="js/section-parser.js?v=20261013f"></script>
+  <script src="js/portfolio-store.js?v=20261013f"></script>
+  <script src="js/component-life.js?v=20261013f"></script>
+  <script src="js/sos-knowledge.js?v=20261013f"></script>
+  <script src="js/portfolio-render.js?v=20261013f"></script>
+  <script src="js/portfolio-followup.js?v=20261013f"></script>
+  <script src="js/portfolio-app.js?v=20261013f"></script>
 
   <!-- Pengaturan (Tema & Threshold) — paling akhir, butuh semua modul -->
-  <script src="js/vhms-settings.js?v=20261006e"></script>
+  <script src="js/vhms-settings.js?v=20261013f"></script>
 
   <!-- SOS ? VHMS switcher -->
   <script>
@@ -1700,7 +1961,9 @@
     });
 
     window.addEventListener('afterprint', function () {
-      document.body.classList.remove('printing');
+      // [BERSIH 2026-10-13] Kelas `printing` (tanpa sufiks) sudah tidak pernah
+      // dipasang lagi — lihat catatan penghapusan `exportReport()` di
+      // js/vhms-app.js. Hanya `printing-portfolio` yang nyata dipakai.
       document.body.classList.remove('printing-portfolio');
     });
   })();

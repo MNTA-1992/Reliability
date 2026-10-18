@@ -1542,13 +1542,16 @@
       // [REDESIGN 2026-10-03] Label dua-baris: asset ID (tebal) + kompartemen
       // (kecil, warna) agar terbaca cepat; badge tier + aksen kiri berwarna.
       var isNormal = (u.mprs.tier || 0) === 0;
-      html += '<td class="hm-label" style="--row-accent:' + tierColor + '">' +
+      // [O-4 2026-10-12] Label kompartemen adalah HEADER bagi sel parameter di
+      // barisnya → `<th scope="row">`. Gaya `td.hm-label` di CSS sudah
+      // diperluas ke `th.hm-label`, jadi tampilan tidak berubah.
+      html += '<th scope="row" class="hm-label" style="--row-accent:' + tierColor + '">' +
         '<span class="hm-tier" style="background:' + tierColor + '26;color:' + tierColor + ';box-shadow:0 0 0 1px ' + tierColor + '55,0 0 10px ' + tierColor + '44">' +
         tierInitial + '</span>' +
         '<span class="hm-label-txt">' +
           '<span class="hm-asset">' + esc(u.assetId) + '</span>' +
           '<span class="hm-comp' + (isNormal ? ' is-normal' : '') + '">' + esc(u.component) + '</span>' +
-        '</span></td>';
+        '</span></th>';
 
       HEATMAP_PARAMS.forEach(function (p) {
         var t = th[p.key];

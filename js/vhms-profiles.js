@@ -129,7 +129,43 @@
     // Tambahan umum (dipakai bila kolomnya ada)
     // [mmHg] Boost 150/180 kPa -> 1125,1/1350,1 mmHg (x7.50062)
     boostMax:     { warn: 1125.1, crit: 1350.1, mode: 'high', label: 'Boost Pressure (mmHg)' },
-    atmosAve:     { warn: 900.0, crit: 880.0, mode: 'low',  label: 'Atmospheric Pressure' }
+    atmosAve:     { warn: 900.0, crit: 880.0, mode: 'low',  label: 'Atmospheric Pressure' },
+
+    // ---------------------------------------------------------------------
+    // [PC2000 2026-10-10 — T3] DUTY GAS BUANG 4 GRUP SILINDER (`chas_trend0`).
+    // ---------------------------------------------------------------------
+    // Sumber nilai: `chas_trend0.CSV` SN 20020 (PC2000-8, SAA12V140E3).
+    // Kolom `LF/LR/RF/RR Exh.Temp 700-|750-|800-` berisi DETIK di atas ambang
+    // suhu, TERAKUMULASI PER JENDELA SMR (~200 jam pada unit contoh).
+    //
+    // ⚠ SATUAN ADALAH PERSEN JENDELA, BUKAN DETIK MENTAH.
+    //   T4 (`vhms-analytics.js`) menormalkan nilai mentah menjadi
+    //   `100 × detik / (ΔSMR × 3600)`. Tanpa normalisasi itu, angka mentah
+    //   (ratusan ribu detik) akan selalu melewati `crit` dan skor tren
+    //   meledak. Jendela 200 h = 720 000 s, jadi 5 % = 36 000 s.
+    //   Persen dipilih agar ambang dapat dibandingkan antar unit yang
+    //   panjang jendelanya berbeda.
+    //
+    // Ambang mesin SAMA dengan TH_TRUCK (engine SAA12V140E3 identik) — D8.
+    // Hanya satuannya yang berbeda (persen jendela vs detik absolut).
+    //
+    // ⚠ USULAN — BELUM TERKALIBRASI LAPANGAN (R2). Unit contoh satu-satunya
+    //   yang tersedia justru memiliki sensor LBR rusak-tinggi (969 °C konstan
+    //   selama 18 bulan), sehingga nilainya tidak dapat dipakai untuk
+    //   memvalidasi ambang. Kalibrasi ulang setelah >=5 unit PC2000 dengan
+    //   sensor SEHAT terkumpul. Lihat docs/STATUS_PROYEK.md §2.4.
+    lfExhOver700: { warn: 5.0,  crit: 25.0, mode: 'high', label: 'LF Exhaust >700\u00B0C (% waktu)', source: 'USULAN — belum terkalibrasi' },
+    lfExhOver750: { warn: 3.0,  crit: 15.0, mode: 'high', label: 'LF Exhaust >750\u00B0C (% waktu)', source: 'USULAN — belum terkalibrasi' },
+    lfExhOver800: { warn: 1.0,  crit: 8.0,  mode: 'high', label: 'LF Exhaust >800\u00B0C (% waktu)', source: 'USULAN — belum terkalibrasi' },
+    lrExhOver700: { warn: 5.0,  crit: 25.0, mode: 'high', label: 'LR Exhaust >700\u00B0C (% waktu)', source: 'USULAN — belum terkalibrasi' },
+    lrExhOver750: { warn: 3.0,  crit: 15.0, mode: 'high', label: 'LR Exhaust >750\u00B0C (% waktu)', source: 'USULAN — belum terkalibrasi' },
+    lrExhOver800: { warn: 1.0,  crit: 8.0,  mode: 'high', label: 'LR Exhaust >800\u00B0C (% waktu)', source: 'USULAN — belum terkalibrasi' },
+    rfExhOver700: { warn: 5.0,  crit: 25.0, mode: 'high', label: 'RF Exhaust >700\u00B0C (% waktu)', source: 'USULAN — belum terkalibrasi' },
+    rfExhOver750: { warn: 3.0,  crit: 15.0, mode: 'high', label: 'RF Exhaust >750\u00B0C (% waktu)', source: 'USULAN — belum terkalibrasi' },
+    rfExhOver800: { warn: 1.0,  crit: 8.0,  mode: 'high', label: 'RF Exhaust >800\u00B0C (% waktu)', source: 'USULAN — belum terkalibrasi' },
+    rrExhOver700: { warn: 5.0,  crit: 25.0, mode: 'high', label: 'RR Exhaust >700\u00B0C (% waktu)', source: 'USULAN — belum terkalibrasi' },
+    rrExhOver750: { warn: 3.0,  crit: 15.0, mode: 'high', label: 'RR Exhaust >750\u00B0C (% waktu)', source: 'USULAN — belum terkalibrasi' },
+    rrExhOver800: { warn: 1.0,  crit: 8.0,  mode: 'high', label: 'RR Exhaust >800\u00B0C (% waktu)', source: 'USULAN — belum terkalibrasi' }
   };
 
   // TRUCK / HD — perbedaan utama: tidak ada swing/pump hidrolik excavator,
@@ -152,7 +188,44 @@
     // Parameter khas HD (hanya muncul bila kolomnya ada)
     retarderTemp: { warn: 115.0, crit: 140.0, mode: 'high', label: 'Retarder Temp' },
     brakeTemp:    { warn: 180.0, crit: 230.0, mode: 'high', label: 'Brake Temp' },
-    hydTempMax:   { warn: 90.0, crit: 100.0, mode: 'high', label: 'Hydraulic Oil Temp' }
+    hydTempMax:   { warn: 90.0, crit: 100.0, mode: 'high', label: 'Hydraulic Oil Temp' },
+
+    /* ---------------------------------------------------------------------
+     * [FIX 2026-10-09] PARAMETER CHASSIS TREND HD785.
+     * -------------------------------------------------------------------
+     * BUG YANG DIPERBAIKI DI SINI: `analysis.thresholdSet` memakai objek
+     * PROFIL KELUARGA (`TH_TRUCK`) ini — BUKAN `cfg.THRESHOLDS`. Ketika
+     * parameter `chas_trend0` (tmFill*, *RtdOver140, *ExhOver800) hanya
+     * ditambahkan ke `cfg.THRESHOLDS`, unit HD785 TIDAK mengenalinya:
+     *   - heatmap menampilkan "—" untuk seluruh kolom fill time,
+     *   - skor/ranking mengabaikannya (tanpa threshold -> dilewati).
+     * Nilai di sini DISALIN dari cfg.THRESHOLDS (satu sumber kebenaran =
+     * spek §2 D2/D4). Bila kelak ambang di-tuning, UBAH DI KEDUA TEMPAT.
+     *
+     * Semuanya SUMBER OEM / service limit Komatsu (2026-10-09) — `provisional`
+     * DIHAPUS. Nilai disalin dari cfg.THRESHOLDS (satu sumber kebenaran =
+     * spek §2 D2/D4). Bila kelak ambang di-tuning, UBAH DI KEDUA TEMPAT.
+     * Tetap DAPAT di-edit di halaman Pengaturan.
+     * ------------------------------------------------------------------- */
+    // [KOREKSI 2026-10-12] `source` di sini DULU berbunyi "OEM service limit".
+    // Itu salah DAN berbahaya: teks inilah yang tampil di kolom
+    // "Sumber / Asal Nilai" halaman Pengaturan (profil keluarga model dipakai
+    // untuk render, bukan cfg.THRESHOLDS). Operator jadi membaca "OEM" padahal
+    // angkanya berasal dari dasar awal-umur SATU unit (SN 31991) — lihat
+    // `docs/STATUS_PROYEK.md` §5.2 & risiko R5-HD §5.3.
+    tmFillLow:     { warn: 400,  crit: 490,  mode: 'high', label: 'Low Clutch Fill Time',  source: 'Kaidah service \u00d71,32/1,58 \u00b7 dasar 1 unit (SN 31991) \u2014 BUKAN Shop Manual' },
+    tmFillHigh:    { warn: 390,  crit: 470,  mode: 'high', label: 'High Clutch Fill Time', source: 'Kaidah service \u00d71,32/1,58 \u00b7 dasar 1 unit (SN 31991) \u2014 BUKAN Shop Manual' },
+    tmFill1:       { warn: 950,  crit: 1170, mode: 'high', label: '1st Clutch Fill Time',  source: 'Kaidah service \u00d71,30/1,60 \u00b7 dasar 1 unit (SN 31991) \u2014 BUKAN Shop Manual' },
+    tmFill2:       { warn: 890,  crit: 1100, mode: 'high', label: '2nd Clutch Fill Time',  source: 'Kaidah service \u00d71,30/1,60 \u00b7 dasar 1 unit (SN 31991) \u2014 BUKAN Shop Manual' },
+    tmFill3:       { warn: 500,  crit: 620,  mode: 'high', label: '3rd Clutch Fill Time',  source: 'Kaidah service \u00d71,29/1,60 \u00b7 dasar 1 unit (SN 31991) \u2014 BUKAN Shop Manual' },
+    tmFill4:       { warn: 460,  crit: 570,  mode: 'high', label: '4th Clutch Fill Time',  source: 'Kaidah service \u00d71,30/1,61 \u00b7 dasar 1 unit (SN 31991) \u2014 BUKAN Shop Manual' },
+    tmFillR:       { warn: 1180, crit: 1450, mode: 'high', label: 'R Clutch Fill Time',    source: 'Kaidah service \u00d71,30/1,60 \u00b7 dasar 1 unit (SN 31991) \u2014 BUKAN Shop Manual' },
+    fRtdOver140:   { warn: 60,   crit: 300,  mode: 'high', label: 'F Retarder Oil >140\u00B0C', source: 'Suhu 140 \u00B0C = ambang kolom berkas (Komatsu) \u00b7 durasi 60/300 s USULAN, belum terkalibrasi' },
+    rRtdOver140:   { warn: 60,   crit: 300,  mode: 'high', label: 'R Retarder Oil >140\u00B0C', source: 'Suhu 140 \u00B0C = ambang kolom berkas (Komatsu) \u00b7 durasi 60/300 s USULAN, belum terkalibrasi' },
+    lfExhOver800:  { warn: 1.0,  crit: 8.0,  mode: 'high', label: 'LF Exhaust >800\u00b0C (% waktu)', source: 'Suhu 800 \u00B0C = ambang kolom berkas (Komatsu) \u00b7 % waktu 1,0/8,0 USULAN, belum terkalibrasi' },
+    lrExhOver800:  { warn: 1.0,  crit: 8.0,  mode: 'high', label: 'LR Exhaust >800\u00b0C (% waktu)', source: 'Suhu 800 \u00B0C = ambang kolom berkas (Komatsu) \u00b7 % waktu 1,0/8,0 USULAN, belum terkalibrasi' },
+    rfExhOver800:  { warn: 1.0,  crit: 8.0,  mode: 'high', label: 'RF Exhaust >800\u00b0C (% waktu)', source: 'Suhu 800 \u00B0C = ambang kolom berkas (Komatsu) \u00b7 % waktu 1,0/8,0 USULAN, belum terkalibrasi' },
+    rrExhOver800:  { warn: 1.0,  crit: 8.0,  mode: 'high', label: 'RR Exhaust >800\u00b0C (% waktu)', source: 'Suhu 800 \u00B0C = ambang kolom berkas (Komatsu) \u00b7 % waktu 1,0/8,0 USULAN, belum terkalibrasi' }
   };
 
   // DOZER — ada torque converter, steering clutch, tilt/ripper hidrolik.
@@ -177,7 +250,37 @@
     // Tekanan main transmisi (torque main). Terlalu RENDAH = slip / tekanan hilang.
     tmMainPressMax: { warn: 2.2, crit: 1.8, mode: 'low', label: 'TM Main Pressure' },
     // Tekanan pompa hidrolik utama (blade/ripper). Turun = keausan pompa/relief.
-    largePumpPress: { warn: 20.0, crit: 15.0, mode: 'low', label: 'Large Pump Pressure' }
+    largePumpPress: { warn: 20.0, crit: 15.0, mode: 'low', label: 'Large Pump Pressure' },
+
+    /* ---------------------------------------------------------------------
+     * [FIX 2026-10-09] PARAMETER T/M TREND D375A.
+     * -------------------------------------------------------------------
+     * BUG YANG SAMA dengan TH_TRUCK di atas: `analysis.thresholdSet` memakai
+     * objek profil ini, BUKAN cfg.THRESHOLDS. Parameter `tm_trend0.CSV`
+     * (tmTrgTime*, tcOilOver*) hanya ditambahkan ke cfg.THRESHOLDS, sehingga
+     * heatmap D375A menampilkan "—" untuk kolom T/M sejak fitur itu dipasang.
+     *
+     * `tcOilOver120` SENGAJA TIDAK diberi ambang (indikator duty, bukan
+     * alarm) — sama seperti cfg.THRESHOLDS. Nilai di sini disalin dari sana;
+     * bila di-tuning, ubah DI KEDUA TEMPAT. Sumber OEM / service limit
+     * (2026-10-09) — `provisional` DIHAPUS.
+     * ------------------------------------------------------------------- */
+    // [KOREKSI 2026-10-12] "OEM service normal" → dinyatakan sebagai kaidah
+    // service umum yang BELUM diverifikasi ke Shop Manual D375A.
+    // [B-4 2026-10-13] Label diperbaiki: ini TRIGGER time (respons ECMV,
+    // belasan msec), BUKAN clutch fill time (ratusan msec) — dulu berlabel
+    // sama persis dengan `tmFillR` sehingga dua kolom berjudul identik.
+    tmTrgTimeF:    { warn: 150,  crit: 200,  mode: 'high', label: 'F Trigger Time',  source: 'Kaidah service trigger time (150/200 msec) \u2014 belum diverifikasi ke Shop Manual' },
+    tmTrgTimeR:    { warn: 150,  crit: 200,  mode: 'high', label: 'R Trigger Time',  source: 'Kaidah service trigger time (150/200 msec) \u2014 belum diverifikasi ke Shop Manual' },
+    tmTrgTime1:    { warn: 200,  crit: 250,  mode: 'high', label: '1st Gear Trigger Time', source: 'Kaidah service fill time per gigi \u2014 belum diverifikasi ke Shop Manual' },
+    tmTrgTime2:    { warn: 200,  crit: 250,  mode: 'high', label: '2nd Gear Trigger Time', source: 'Kaidah service fill time per gigi \u2014 belum diverifikasi ke Shop Manual' },
+    tmTrgTime3:    { warn: 200,  crit: 250,  mode: 'high', label: '3rd Gear Trigger Time', source: 'Kaidah service fill time per gigi \u2014 belum diverifikasi ke Shop Manual' },
+    // Duty termal oli T/C: hanya tingkat TERTINGGI yang diberi ambang.
+    // CATATAN: tcOilOver130 memakai ambang LEBIH TINGGI (300/1800) daripada
+    // tcOilOver140 (60/300) — suhu 130 °C lebih sering & lebih lama tercapai
+    // sehingga durasi "normal"-nya pun lebih panjang. Jangan tertukar.
+    tcOilOver130:  { warn: 300,  crit: 1800, mode: 'high', label: 'T/C Oil >130\u00B0C', source: 'OEM T/C oil warning 130 \u00B0C' },
+    tcOilOver140:  { warn: 60,   crit: 300,  mode: 'high', label: 'T/C Oil >140\u00B0C', source: 'OEM T/C oil limit 140 \u00B0C' }
   };
 
   /* -----------------------------------------------------------------------

@@ -10,7 +10,7 @@
  *   3. TREN     (Trend)      25%  — seberapa CEPAT memburuk (slope vs SMR)
  *
  * Kriteria & bobot bersumber dari standar reliability umum industri
- * (Safety > Downtime > Biaya) — lihat docs/KRITERIA_RANKING_CRITICAL.md.
+ * (Safety > Downtime > Biaya) — lihat docs/STATUS_PROYEK.md.
  * BUKAN dokumen resmi Komatsu. Semua bobot ada di vhms-config.js.
  * ========================================================================= */
 
@@ -85,8 +85,8 @@
       if (dt < 0) continue;              // lompatan tak wajar, abaikan
       totalHours += dt;
 
-      var v = cur[paramKey];
-      if (v === null || v === undefined) continue;
+      var v = maskedValueOf(cur, paramKey);
+      if (v === null) continue;
       var violates = (th.mode === 'low') ? (v <= warnTh) : (v >= warnTh);
       if (violates) violatingHours += dt;
     }
@@ -128,7 +128,71 @@
     rExhTempMax:   0.015,   // °C/jam
     tcOilTempMax:  0.002,   // °C/jam (115-125°C; ~0.2°C/100jam)
     tmMainPressMax:0.0005,  // MPa/jam (low mode, tekanan turun)
-    largePumpPress:0.0005   // MPa/jam (low mode)
+    largePumpPress:0.0005,  // MPa/jam (low mode)
+    // [T5.5 2026-10-08] Parameter T/M Trend. Tanpa entri di sini, fallback
+    // 0.001 membuat skor tren TERLALU SENSITIF untuk nilai ratusan msec/detik
+    // (mis. fill time bergerak 100 -> 110 msec dalam 100 jam = 0.1 msec/jam,
+    // sudah dianggap "100% memburuk" oleh fallback).
+    tmTrgTimeF:    0.05,    // msec/jam (~5 msec per 100 jam = cepat)
+    tmTrgTimeR:    0.05,    // msec/jam
+    tmTrgTime1:    0.05,    // msec/jam
+    tmTrgTime2:    0.05,    // msec/jam
+    tmTrgTime3:    0.05,    // msec/jam
+    tcOilOver130:  0.02,    // detik/jam (duty termal)
+    tcOilOver140:  0.01     // detik/jam (ambang lebih tinggi -> lebih jarang)
+    /* ---------------------------------------------------------------------
+     * [T9 2026-10-09] PARAMETER CHASSIS TREND HD785 (file chas_trend0.CSV).
+     * -------------------------------------------------------------------
+     * WAJIB ADA. Bila entri di bawah ini tidak ditulis, `trendScore()` jatuh
+     * ke fallback 0.001. Untuk nilai berskala RATUSAN (fill time ~1000 msec)
+     * atau RIBUAN (durasi duty ~3000 detik), fallback 0.001 membuat kenaikan
+     * 1 satuan/jam sudah dianggap "memburuk 100 km/jam" -> SELURUH unit
+     * HD785 tampak CRITICAL. Bug yang sama pernah terjadi pada param T/M
+     * Trend D375A (lihat catatan [T5.5 2026-10-08] di atas).
+     *
+     * Dasar penyetelan mengikuti kaidah yang sama dengan tmTrgTime*:
+     *   - Fill time  : ~5 msec per 100 jam = 0,05 msec/jam (keausan cepat).
+     *     Posisi bernilai besar (R ~900 msec) memakai rentang sama karena
+     *     yang dinilai adalah LAJU perubahan, bukan nilai absolut.
+     *   - Duty termal: 0,05 detik/jam pada ambang retakan yang paling
+     *     berbahaya (140 °C / 800 °C). Tingkat lebih rendah tidak diskor.
+     * ------------------------------------------------------------------- */
+    ,tmFillLow:     0.05,   // msec/jam
+    tmFillHigh:    0.05,    // msec/jam
+    tmFillR:       0.05,    // msec/jam
+    tmFill1:       0.05,    // msec/jam
+    tmFill2:       0.05,    // msec/jam
+    tmFill3:       0.05,    // msec/jam
+    tmFill4:       0.05,    // msec/jam
+    fRtdOver140:   0.05,    // detik/jam (duty oli retarder depan)
+    rRtdOver140:   0.05,    // detik/jam (duty oli retarder belakang)
+    /* ---------------------------------------------------------------------
+     * [B14 2026-10-10 — OPSI A] DUTY GAS BUANG: SATU SATUAN (%/jam).
+     * -------------------------------------------------------------------
+     * Sebelum B14, `*ExhOver800` ditandai "detik/jam" untuk HD785 sementara
+     * kolomnya sudah dinormalkan ke PERSEN — rasio yang salah 3600x. Setelah
+     * B14, `normalizeExhaustDuty()` menormalkan SEMUA model ke persen
+     * jendela, jadi satuan skala tren adalah %/jam untuk keempat tingkat.
+     *
+     * 0,01 %/jam = duty gas buang naik 1 % per 100 jam SMR -> cepat memburuk.
+     *
+     * ⚠ Entri yang HILANG jatuh ke fallback 0.001 dan membuat skor tren
+     *   meledak — mode gagal senyap yang sudah terdokumentasi dua kali.
+     *   JANGAN hapus entri di blok ini saat menambah model baru.
+     * ------------------------------------------------------------------- */
+    lfExhOver800:  0.01,    // %/jam (duty gas buang LF, >800 degC)
+    lrExhOver800:  0.01,    // %/jam (duty gas buang LR, >800 degC)
+    rfExhOver800:  0.01,    // %/jam (duty gas buang RF, >800 degC)
+    rrExhOver800:  0.01,    // %/jam (duty gas buang RR, >800 degC)
+    /* Tingkat 700/750 hanya ada pada PC2000 -> juga %/jam (lihat T3/T4). */
+    lfExhOver700:  0.01,    // %/jam (PC2000)
+    lfExhOver750:  0.01,    // %/jam (PC2000)
+    lrExhOver700:  0.01,    // %/jam (PC2000)
+    lrExhOver750:  0.01,    // %/jam (PC2000)
+    rfExhOver700:  0.01,    // %/jam (PC2000)
+    rfExhOver750:  0.01,    // %/jam (PC2000)
+    rrExhOver700:  0.01,    // %/jam (PC2000)
+    rrExhOver750:  0.01     // %/jam (PC2000)
   };
 
   function trendScore(records, paramKey, th) {
@@ -145,8 +209,8 @@
   function slopeOf(records, paramKey) {
     var xs = [], ys = [];
     for (var i = 0; i < records.length; i++) {
-      var x = records[i].smr, y = records[i][paramKey];
-      if (x === null || y === null || y === undefined) continue;
+      var x = records[i].smr, y = maskedValueOf(records[i], paramKey);
+      if (x === null || y === null) continue;
       xs.push(x); ys.push(y);
     }
     if (xs.length < 4) return null;
@@ -207,6 +271,22 @@
     };
   }
 
+  /* -----------------------------------------------------------------------
+   * [T2 / FIX 2026-10-08] Pembacaan nilai yang MENGHORMATI gerbang kualitas
+   * data. `VHMS_VALIDATE.applyFaultMask()` menandai `record._masked[key]`
+   * untuk nilai yang berasal dari sensor rusak. Sesuai README §6.3 nilai
+   * TETAP TAMPIL di tabel/chart (renderer membaca field aslinya), tetapi
+   * HARUS DIKELUARKAN dari seluruh FORMULA skor.
+   *
+   * Semua pembacaan nilai parameter di dalam modul ranking wajib lewat sini.
+   * --------------------------------------------------------------------- */
+  function maskedValueOf(rec, key) {
+    if (!rec) return null;
+    if (rec._masked && rec._masked[key]) return null;
+    var v = rec[key];
+    return (v === null || v === undefined || isNaN(v)) ? null : v;
+  }
+
   /** Ringkasan (summary) dihitung ulang dari subset window. */
   function summarizeSubset(records) {
     var out = {};
@@ -216,8 +296,8 @@
       if (key === 'smr' || key === 'calendar') continue;
       var v = [];
       for (var i = 0; i < records.length; i++) {
-        var val = records[i][key];
-        if (val !== null && val !== undefined && !isNaN(val)) v.push(val);
+        var val = maskedValueOf(records[i], key);
+        if (val !== null) v.push(val);
       }
       if (!v.length) { out[key] = { min: null, max: null, avg: null, last: null, first: null, count: 0 }; continue; }
       var sum = 0;
@@ -331,13 +411,83 @@
     return out;
   }
 
+  /* -----------------------------------------------------------------------
+   * [T4.4] Kontributor pseudo-parameter pilar EVENT dari ringkasan fault.
+   * ---------------------------------------------------------------------
+   * Fault tidak punya slope -> `trend` = 0 (bukan ditebak).
+   * `severity` = faultScore (0..1), `evidence` = min(1, recurrence/200).
+   * Bobot diperlakukan SELAYAKNYA parameter biasa: `baseWeight` = 1 (netral
+   * terhadap skala RANKING_WEIGHTS yang bernilai 2..18) dikali bobot pilar
+   * EVENT dari RANKING_PILLAR_WEIGHTS.
+   *
+   * Nilai `evidence` sengaja DIBATASI 1 AGAR kontribusi pilar EVENT TIDAK
+   * PERNAH MELEBIHI kontribusi parameter VHMS terkuat (18 x 2.0). Tanpa
+   * batas ini, unit dengan riwayat fault sangat panjang (mis. recurrence
+   * 122.383) akan mendominasi seluruh skor dan menenggelamkan pilar lain.
+   * Kalau kelak pilar EVENT ingin lebih tegas, naikkan `EVENT_WEIGHT`
+   * di RANKING_PILLAR_WEIGHTS — bukan dengan melepas batas ini.
+   *
+   * @param {object} faultSummary hasil VHMS_FAULT.summarize()
+   * @returns {object|null} kontributor siap-concat, atau null bila absen.
+   * --------------------------------------------------------------------- */
+  var FAULT_EVIDENCE_REF = 200;   // recurrence yang dianggap "bukti penuh"
+  var FAULT_BASE_WEIGHT = 1;      // netral thd skala bobot parameter VHMS
+
+  function buildFaultContributor(faultSummary) {
+    if (!faultSummary || !faultSummary.eventCount) return null;
+
+    var pillarWeights = cfg.RANKING_PILLAR_WEIGHTS || {};
+    var pw = (pillarWeights.EVENT !== undefined) ? pillarWeights.EVENT : 1.0;
+    var sev = (typeof faultSummary.faultScore === 'number') ? faultSummary.faultScore : 0;
+    var evi = Math.min(1, (faultSummary.recurrence || 0) / FAULT_EVIDENCE_REF);
+    var tre = 0;   // fault tidak punya slope/arah tren
+    var effWeight = FAULT_BASE_WEIGHT * pw;
+
+    return {
+      param: '__fault',
+      label: 'Event/Alarm',
+      unit: 'kejadian',
+      decimals: 0,
+      pillar: 'EVENT',
+      value: faultSummary.eventCount,
+      warn: null,
+      crit: null,
+      mode: 'high',
+      severity: sev,
+      evidence: evi,
+      trend: tre,
+      weight: effWeight,
+      pillarWeight: pw,
+      baseWeight: FAULT_BASE_WEIGHT,
+      isFault: true,
+      faultSummary: {
+        eventCount: faultSummary.eventCount,
+        recurrence: faultSummary.recurrence,
+        activeCount: faultSummary.activeCount,
+        distinctCodes: faultSummary.distinctCodes,
+        topCode: faultSummary.topCode,
+        eventDensity: faultSummary.eventDensity
+      },
+      contribution: effWeight * (cfg.RANKING_AXES.severity * sev +
+                                 cfg.RANKING_AXES.evidence * evi +
+                                 cfg.RANKING_AXES.trend * tre)
+    };
+  }
+
   /**
    * Skor criticalitas lengkap sebuah unit.
    * [RULE DATA] HANYA memakai data pada window FORMULA_WINDOW_HOURS terakhir.
    * [POIN 7] Bobot pilar (Engine lebih besar) memengaruhi skor.
+   *
+   * [T4.4 2026-10-08] Parameter ke-3 `faultSummary` OPSIONAL. Bila diberikan
+   * (hasil VHMS_FAULT.summarize), pilar `EVENT` masuk sebagai kontributor
+   * pseudo-parameter (`param: '__fault'`). Bila TIDAK diberikan, jalur kode
+   * LAMA berjalan tanpa perubahan numerik APA PUN — ini dijaga oleh test
+   * regresi (nilai skor di-hardcode di test-suite).
+   *
    * @returns {object} { id, score, band, severity, evidence, trend, params, topCause, pillar }
    */
-  function scoreUnit(unitId, analysis) {
+  function scoreUnit(unitId, analysis, faultSummary) {
     if (!analysis) return null;
 
     // [POIN 8] Potong ke window jam terakhir
@@ -346,6 +496,13 @@
     var winSummary = summarizeSubset(winRecords);
 
     var params = scoreParameters(analysis, winRecords, winSummary);
+
+    // ---- [T4.4] Kontributor pseudo-parameter pilar EVENT ----
+    // Disisipkan SEBELUM agregasi sumbu supaya ikut memengaruhi severity/
+    // evidence/trend secara alami, tanpa mengubah rumus agregasi.
+    var faultContrib = buildFaultContributor(faultSummary);
+    if (faultContrib) params = params.concat([faultContrib]);
+
     var axes = cfg.RANKING_AXES;
 
     // Sumbu agregat (rata-rata berbobot terhadap total bobot parameter)
@@ -416,6 +573,26 @@
     var band = score >= bands.critical ? 'CRITICAL'
               : (score >= bandCaution ? 'CAUTION' : 'NORMAL');
 
+    /* ---------------------------------------------------------------------
+     * [T2/R4 — FIX 2026-10-08] DATA TIDAK LAYAK.
+     * -------------------------------------------------------------------
+     * Bila gerbang kualitas data mem-mask SELURUH parameter (mis. suplai
+     * 24V VHMS abnormal / kegagalan CAN-net), telemetri unit ini tidak
+     * layak dipercaya. Setelah mask dihormati oleh formula, hampir semua
+     * parameter kehilangan nilai sehingga skor justru TURUN — tepat jebakan
+     * yang diperingatkan spek R4: angka rendah terbaca "sehat".
+     *
+     * Karena itu unit ditandai `dataUnfit` dan DIPAKSA ke band tertinggi
+     * dengan lantai skor = ambang critical, supaya tidak pernah tenggelam
+     * di urutan armada. UI menampilkannya sebagai "DATA TIDAK LAYAK"
+     * (lihat faultCellHtml & panel fault), bukan sebagai skor sehat.
+     * ------------------------------------------------------------------- */
+    var dataUnfit = !!(faultSummary && faultSummary.dataUnfit);
+    if (dataUnfit) {
+      band = 'CRITICAL';
+      if (score < bands.critical) score = bands.critical;
+    }
+
     var top = params[0] || null;
 
     return {
@@ -429,6 +606,11 @@
       },
       affectedCount: affected.length,
       affectedParams: affected,
+      // [T2/R4] true = seluruh parameter ter-mask; skor TIDAK bermakna klinis.
+      dataUnfit: dataUnfit,
+      // [T4.4] Ringkasan pilar EVENT (null bila tidak ada fault / tidak diminta)
+      faultSummary: faultSummary || null,
+      eventContributor: faultContrib,
       breadthFactor: Math.round(breadthFactor * 100) / 100,
       pillarFactor: Math.round(pillarFactor * 100) / 100,
       params: params,
@@ -464,7 +646,11 @@
         results.push(buildPartialScore(row));
         return;
       }
-      var sc = scoreUnit(row.id, analysis);
+      // [T4.4] Sertakan ringkasan fault bila unit ini punya riwayat fault.
+      // Bila tidak ada (undefined), scoreUnit() berjalan pada jalur LAMA.
+      var fSum = (typeof fleetStore.getFaultSummary === 'function')
+        ? fleetStore.getFaultSummary(row.id) : null;
+      var sc = scoreUnit(row.id, analysis, fSum || undefined);
       if (sc) {
         sc.serial = row.serial;
         sc.model = row.model;
@@ -635,11 +821,16 @@
 
   /* ----------------------------------------------------------------------- */
   global.VHMS_RANKING = {
+    // [T9 2026-10-09] Diekspor agar dapat diaudit & diuji: tanpa entri yang
+    // benar, `trendScore()` memakai fallback 0.001 dan unit dengan parameter
+    // berskala ratusan/ribuan tampak memburuk 100 % (ranking terinflasi).
+    TREND_FULL_SCALE: TREND_FULL_SCALE,
     severityScore: severityScore,
     evidenceScore: evidenceScore,
     trendScore: trendScore,
     scoreParameters: scoreParameters,
     scoreUnit: scoreUnit,
+    buildFaultContributor: buildFaultContributor,
     rankFleet: rankFleet,
     paramMatrix: paramMatrix,
     statusOf: statusOf,

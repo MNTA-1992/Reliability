@@ -69,9 +69,20 @@
     coolantTemp:     { csvHeader: 'Cool Temp.MAX',        label: 'Coolant Temp Max',       unit: '\u00B0C', decimals: 1 },
     coolantTempMin:  { csvHeader: 'Cool Temp.Min',        label: 'Coolant Temp Min',       unit: '\u00B0C', decimals: 1 },
     fuelRate:        { csvHeader: 'Fuel Rate',            label: 'Fuel Rate',              unit: 'L/h',     decimals: 1, scale: 0.1 },
-    ambientMax:      { csvHeader: 'Ambient TempMax',      label: 'Ambient Temp Max',       unit: '\u00B0C', decimals: 1 },
-    ambientAve:      { csvHeader: 'Ambient TempAve',      label: 'Ambient Temp Ave',       unit: '\u00B0C', decimals: 1 },
-    ambientMin:      { csvHeader: 'Ambient TempMin',      label: 'Ambient Temp Min',       unit: '\u00B0C', decimals: 1 },
+    // [B-3 2026-10-13] `nullValues` = sentinel KHUSUS PARAMETER ini.
+    // Pada sebagian berkas HD785, sensor ambient tidak terpasang/tidak terbaca
+    // dan ECM menulis nilai batas int8: Max = -128, Min = 127 — KONSTAN di
+    // seluruh 200 baris, dan secara fisika mustahil (max < min).
+    // `NULL_SENTINELS` global hanya memuat batas int16 (-32768/-32767)
+    // sehingga angka ini lolos dan tampil sebagai suhu sungguhan.
+    // Sentinel ini TIDAK boleh global: -128 dan 127 adalah nilai SAH untuk
+    // parameter lain (mis. hitungan duty, tekanan, sudut).
+    // CATATAN: `ambientAve` TIDAK diberi `nullValues: [0]` — 0 °C adalah suhu
+    // yang SAH di tempat lain. Kasus "Ave = 0 padahal Max/Min sentinel"
+    // ditangani aturan KOHERENSI di vhms-parser (lihat `_voidIncoherent`).
+    ambientMax:      { csvHeader: 'Ambient TempMax',      label: 'Ambient Temp Max',       unit: '\u00B0C', decimals: 1, nullValues: [-128, 127] },
+    ambientAve:      { csvHeader: 'Ambient TempAve',      label: 'Ambient Temp Ave',       unit: '\u00B0C', decimals: 1, nullValues: [-128, 127] },
+    ambientMin:      { csvHeader: 'Ambient TempMin',      label: 'Ambient Temp Min',       unit: '\u00B0C', decimals: 1, nullValues: [-128, 127] },
     // CATATAN KONVERSI: CSV VHMS menyimpan tekanan atmosfer dalam kPa
     // (mis. 98 kPa), sedangkan tampilan & threshold baku memakai hPa.
     // 1 kPa = 10 hPa, jadi nilai mentah dikali 10 (mis. 98 -> 980 hPa).
@@ -141,7 +152,104 @@
     // --- Kemiringan blade (pitch angle) — diagnostik beban & sikap unit ---
     pitchAngleMax:   { csvHeader: 'Pitch Angle Max',      label: 'Pitch Angle Max',        unit: '\u00B0',  decimals: 1, scale: 0.1 },
     pitchAngleAve:   { csvHeader: 'Pitch Angle Ave',      label: 'Pitch Angle Ave',        unit: '\u00B0',  decimals: 1, scale: 0.1 },
-    pitchAngleMin:   { csvHeader: 'Pitch Angle Min',      label: 'Pitch Angle Min',        unit: '\u00B0',  decimals: 1, scale: 0.1 }
+    pitchAngleMin:   { csvHeader: 'Pitch Angle Min',      label: 'Pitch Angle Min',        unit: '\u00B0',  decimals: 1, scale: 0.1 },
+
+    // -----------------------------------------------------------------------
+    // [T5 2026-10-08] PARAMETER T/M TREND (file `tm_trend0.CSV`, Data Type 81)
+    // -----------------------------------------------------------------------
+    // Satu-satunya sumber longitudinal panjang untuk powertrain dozer.
+    // Nama header SAMA PERSIS dengan baris "Axis Item" file tm_trend0:
+    //   Axis Item,SMR,Calendar,F Trg. Time,R Trg. Time,1st Trg. Time,
+    //             2nd Trg. Time,3rd Trg. Time,TC Oil T.120-,TC Oil T.130-,TC Oil T.140-
+    //
+    // ARTI:
+    //   * Trg. Time       = waktu trigger / CLUTCH FILL TIME (msec).
+    //                       NAIK = clutch pack aus atau tekanan modulasi turun.
+    //   * TC Oil T.1xx-   = DURASI (detik) suhu oli torque converter berada di
+    //                       atas 120/130/140 °C. ⚠ Ini DELTA PER INTERVAL
+    //                       snapshot, BUKAN akumulasi seumur hidup (lihat
+    //                       vhms-analytics.cumulative() + docs §1.2). Karena
+    //                       itu parameter ini TIDAK BOLEH ditafsirkan lewat
+    //                       `slope` seolah akumulasi.
+    // -----------------------------------------------------------------------
+    // [B-4 2026-10-13] LABEL DIPERBAIKI: dulu keduanya berlabel
+    // "F/R Clutch Fill Time" sehingga `tmTrgTimeR` BERTABRAKAN PERSIS dengan
+    // `tmFillR` — dua kolom berjudul sama muncul berdampingan di tabel log
+    // (terbukti di browser pada HD785). Padahal keduanya besaran BERBEDA,
+    // seperti dijelaskan komentar blok di bawah: `Trg. Time` = respons ECMV
+    // (belasan msec; terukur 17), `Fill Time` = pengisian clutch pack
+    // (ratusan msec; terukur 930). Ambangnya pun berbeda jauh (200 vs 1450).
+    // Penamaan kini mengikuti `tmTrgTimeLow`/`tmTrgTimeHigh` yang sudah benar.
+    tmTrgTimeF:      { csvHeader: 'F Trg. Time',          label: 'F Trigger Time',         unit: 'msec',    decimals: 0 },
+    tmTrgTimeR:      { csvHeader: 'R Trg. Time',          label: 'R Trigger Time',         unit: 'msec',    decimals: 0 },
+    tmTrgTime1:      { csvHeader: '1st Trg. Time',        label: '1st Gear Trigger Time',  unit: 'msec',    decimals: 0 },
+    tmTrgTime2:      { csvHeader: '2nd Trg. Time',        label: '2nd Gear Trigger Time',  unit: 'msec',    decimals: 0 },
+    tmTrgTime3:      { csvHeader: '3rd Trg. Time',        label: '3rd Gear Trigger Time',  unit: 'msec',    decimals: 0 },
+    tcOilOver120:    { csvHeader: 'TC Oil T.120-',        label: 'T/C Oil over 120\u00B0C', unit: 'sec',     decimals: 0, delta: true },
+    tcOilOver130:    { csvHeader: 'TC Oil T.130-',        label: 'T/C Oil over 130\u00B0C', unit: 'sec',     decimals: 0, delta: true },
+    tcOilOver140:    { csvHeader: 'TC Oil T.140-',        label: 'T/C Oil over 140\u00B0C', unit: 'sec',     decimals: 0, delta: true },
+
+    // -----------------------------------------------------------------------
+    // [HD785 2026-10-09] PARAMETER CHASSIS TREND (`chas_trend0.CSV`, Type 86)
+    // -----------------------------------------------------------------------
+    // Nama header SAMA PERSIS dengan baris "Axis Item" chas_trend0 HD785-7.
+    // Berkas ini punya SMR **dan** Calendar yang DUA-DUANYA SAH (berbeda dari
+    // `tm_trend0.CSV` D375A yang Calendar-nya tidak sinkron), sehingga ia
+    // digabung sebagai record trend biasa lewat VHMS_FLEET.add().
+    //
+    // TIGA KELOMPOK BESAR:
+    //  1) *Fill Time*  — waktu PENGISIAN clutch pack (msec) per posisi.
+    //       NAIK = clutch pack aus / tekanan modulasi turun / seal bocor.
+    //       Ini indikator keausan powertrain yang paling langsung.
+    //  2) *Trg. Time*  — waktu TRIGGER (msec), yaitu respons ECMV.
+    //       Nilainya jauh lebih kecil (belasan msec) daripada fill time.
+    //  3) *T.1xx- / Temp 7xx-* — DURASI (detik) sebuah suhu berada di atas
+    //       ambang pada periode snapshot. ⚠ DELTA PER INTERVAL, bukan
+    //       akumulasi seumur hidup — sama seperti `tcOilOver*` (lihat
+    //       vhms-analytics.cumulative()). JANGAN ditafsirkan lewat `slope`
+    //       seolah besaran kumulatif.
+    //
+    // ⚠ `Fill Time` dan `Trg. Time` adalah DUA kolom BERBEDA pada berkas ini.
+    //    Jangan menyamakan keduanya: `tmTrgTime*` (sudah ada, dipakai D375A)
+    //    tetap memetakan "Trg. Time", sedangkan `tmFill*` adalah kolom baru.
+    // -----------------------------------------------------------------------
+    tmFillLow:       { csvHeader: 'Low Fill Time',        label: 'Low Clutch Fill Time',   unit: 'msec',    decimals: 0 },
+    tmFillHigh:      { csvHeader: 'High Fill Time',       label: 'High Clutch Fill Time',  unit: 'msec',    decimals: 0 },
+    tmFill1:         { csvHeader: '1st Fill Time',        label: '1st Clutch Fill Time',   unit: 'msec',    decimals: 0 },
+    tmFill2:         { csvHeader: '2nd Fill Time',        label: '2nd Clutch Fill Time',   unit: 'msec',    decimals: 0 },
+    tmFill3:         { csvHeader: '3rd Fill Time',        label: '3rd Clutch Fill Time',   unit: 'msec',    decimals: 0 },
+    tmFill4:         { csvHeader: '4th Fill Time',        label: '4th Clutch Fill Time',   unit: 'msec',    decimals: 0 },
+    tmFillR:         { csvHeader: 'R Fill Time',          label: 'R Clutch Fill Time',     unit: 'msec',    decimals: 0 },
+
+    tmTrgTimeLow:    { csvHeader: 'Low Trg. Time',        label: 'Low Trigger Time',       unit: 'msec',    decimals: 0 },
+    tmTrgTimeHigh:   { csvHeader: 'High Trg. Time',       label: 'High Trigger Time',      unit: 'msec',    decimals: 0 },
+    tmTrgTime4:      { csvHeader: '4th Trg. Time',        label: '4th Gear Trigger Time',  unit: 'msec',    decimals: 0 },
+
+    // Oli retarder depan/belakang (RTD = ReTarDer) — duty termal pengereman.
+    fRtdOver120:     { csvHeader: 'F RTD Oil T.120-',     label: 'F Retarder Oil >120\u00B0C', unit: 'sec', decimals: 0, delta: true },
+    fRtdOver130:     { csvHeader: 'F RTD Oil T.130-',     label: 'F Retarder Oil >130\u00B0C', unit: 'sec', decimals: 0, delta: true },
+    fRtdOver140:     { csvHeader: 'F RTD Oil T.140-',     label: 'F Retarder Oil >140\u00B0C', unit: 'sec', decimals: 0, delta: true },
+    rRtdOver120:     { csvHeader: 'R RTD Oil T.120-',     label: 'R Retarder Oil >120\u00B0C', unit: 'sec', decimals: 0, delta: true },
+    rRtdOver130:     { csvHeader: 'R RTD Oil T.130-',     label: 'R Retarder Oil >130\u00B0C', unit: 'sec', decimals: 0, delta: true },
+    rRtdOver140:     { csvHeader: 'R RTD Oil T.140-',     label: 'R Retarder Oil >140\u00B0C', unit: 'sec', decimals: 0, delta: true },
+
+    // Suhu gas buang per GRUP SILINDER. HD785 mesin V12 dibagi 4 grup:
+    // LF = Left-Bank Front, LR = Left-Bank Rear, RF = Right-Bank Front,
+    // RR = Right-Bank Rear. Nama ini sepadan dengan LBF/LBR/RBF/RBR pada
+    // pesan fault (`Exhaust Temp. Sensor RBF Failure`) — dipakai oleh
+    // FAULT_SENSOR_MAP untuk gerbang kualitas data.
+    lfExhOver700:    { csvHeader: 'LF Exh.Temp 700-',     label: 'LF Exhaust >700\u00B0C', unit: '% jendela',     decimals: 2, delta: true },
+    lfExhOver750:    { csvHeader: 'LF Exh.Temp 750-',     label: 'LF Exhaust >750\u00B0C', unit: '% jendela',     decimals: 2, delta: true },
+    lfExhOver800:    { csvHeader: 'LF Exh.Temp 800-',     label: 'LF Exhaust >800\u00B0C', unit: '% jendela',     decimals: 2, delta: true },
+    lrExhOver700:    { csvHeader: 'LR Exh.Temp 700-',     label: 'LR Exhaust >700\u00B0C', unit: '% jendela',     decimals: 2, delta: true },
+    lrExhOver750:    { csvHeader: 'LR Exh.Temp 750-',     label: 'LR Exhaust >750\u00B0C', unit: '% jendela',     decimals: 2, delta: true },
+    lrExhOver800:    { csvHeader: 'LR Exh.Temp 800-',     label: 'LR Exhaust >800\u00B0C', unit: '% jendela',     decimals: 2, delta: true },
+    rfExhOver700:    { csvHeader: 'RF Exh.Temp 700-',     label: 'RF Exhaust >700\u00B0C', unit: '% jendela',     decimals: 2, delta: true },
+    rfExhOver750:    { csvHeader: 'RF Exh.Temp 750-',     label: 'RF Exhaust >750\u00B0C', unit: '% jendela',     decimals: 2, delta: true },
+    rfExhOver800:    { csvHeader: 'RF Exh.Temp 800-',     label: 'RF Exhaust >800\u00B0C', unit: '% jendela',     decimals: 2, delta: true },
+    rrExhOver700:    { csvHeader: 'RR Exh.Temp 700-',     label: 'RR Exhaust >700\u00B0C', unit: '% jendela',     decimals: 2, delta: true },
+    rrExhOver750:    { csvHeader: 'RR Exh.Temp 750-',     label: 'RR Exhaust >750\u00B0C', unit: '% jendela',     decimals: 2, delta: true },
+    rrExhOver800:    { csvHeader: 'RR Exh.Temp 800-',     label: 'RR Exhaust >800\u00B0C', unit: '% jendela',     decimals: 2, delta: true },
   };
 
   /* -----------------------------------------------------------------------
@@ -353,6 +461,24 @@
       ]
     },
     {
+      // [T5.4 2026-10-08] Chart T/M Clutch Fill Time & Thermal Duty.
+      // Sumber: tm_trend0.CSV (Data Type 81). Kiri = 5 seri Trg. Time (msec),
+      // kanan = duty termal oli T/C (detik di atas 130/140 °C).
+      // Taruh tepat setelah group-powertrain sesuai spek T5.4.
+      id: 'group-tmtrend', title: 'T/M Clutch Fill Time &amp; Thermal Duty',
+      subtitle: 'Waktu trigger clutch (msec) &lt;-&gt; durasi oli T/C di atas 130/140 \u00B0C (detik)',
+      icon: 'fa-stopwatch', accent: '#6366f1', minParams: 1,
+      series: [
+        { param: 'tmTrgTimeF', axis: 'left', color: '#818cf8', type: 'line', width: 2.5 },
+        { param: 'tmTrgTimeR', axis: 'left', color: '#a78bfa', type: 'line', width: 2.5 },
+        { param: 'tmTrgTime1', axis: 'left', color: '#38bdf8', type: 'line', width: 1.5, dashed: true },
+        { param: 'tmTrgTime2', axis: 'left', color: '#22d3ee', type: 'line', width: 1.5, dashed: true },
+        { param: 'tmTrgTime3', axis: 'left', color: '#2dd4bf', type: 'line', width: 1.5, dashed: true },
+        { param: 'tcOilOver130', axis: 'right', color: '#f59e0b', type: 'line', width: 2 },
+        { param: 'tcOilOver140', axis: 'right', color: '#ef4444', type: 'line', width: 2 }
+      ]
+    },
+    {
       // [D375A] Aktivitas kerja dozer (jam & siklus) + kemiringan blade.
       id: 'group-dozing', title: 'Dozing Productivity',
       subtitle: 'Durasi dozing/ripping, pass times, dan kemiringan blade',
@@ -362,6 +488,57 @@
         { param: 'rippingTime',  axis: 'left',  color: '#84cc16', type: 'line', width: 2 },
         { param: 'passTimes',    axis: 'right', color: '#0ea5e9', type: 'line', width: 1.5, dashed: true },
         { param: 'pitchAngleAve', axis: 'right', color: '#eab308', type: 'line', width: 1.5 }
+      ]
+    },
+    {
+      // [T10 2026-10-09] CLUTCH PACK FILL TIME — HD785 (chas_trend0.CSV).
+      // Kiri = 7 posisi clutch (msec). NAIK = clutch pack aus / seal bocor /
+      // tekanan modulasi turun. Ini indikator keausan powertrain paling
+      // langsung, jadi ia layak mendapat layar sendiri (bukan dicampur).
+      // Semua threshold-nya `provisional: true` — UI wajib menandainya.
+      id: 'group-hd785-clutch', title: 'Clutch Pack Fill Time',
+      subtitle: 'Waktu pengisian clutch pack per posisi (msec) \u2014 keausan pack / kebocoran seal / tekanan modulasi',
+      icon: 'fa-stopwatch', accent: '#8b5cf6', minParams: 1,
+      series: [
+        { param: 'tmFillLow',  axis: 'left', color: '#818cf8', type: 'line', width: 2 },
+        { param: 'tmFillHigh', axis: 'left', color: '#a78bfa', type: 'line', width: 2 },
+        { param: 'tmFillR',    axis: 'left', color: '#c084fc', type: 'line', width: 2.5 },
+        { param: 'tmFill1',    axis: 'left', color: '#38bdf8', type: 'line', width: 1.5, dashed: true },
+        { param: 'tmFill2',    axis: 'left', color: '#22d3ee', type: 'line', width: 1.5, dashed: true },
+        { param: 'tmFill3',    axis: 'left', color: '#2dd4bf', type: 'line', width: 1.5, dashed: true },
+        { param: 'tmFill4',    axis: 'left', color: '#34d399', type: 'line', width: 1.5, dashed: true }
+      ]
+    },
+    {
+      // [T10 2026-10-09] DUTY TERMAL RETARDER — HD785.
+      // Durasi oli retarder di atas 140 °C (detik, DELTA per interval) diadu
+      // dengan suhu retarder sesaat. Terkait SAFETY: brake fading saat
+      // turunan berbeban, bukan sekadar biaya komponen.
+      id: 'group-hd785-retarder', title: 'Retarder Thermal Duty',
+      subtitle: 'Durasi oli retarder &gt;140 \u00B0C (detik) \u2194 suhu retarder \u2014 risiko brake fading saat turunan',
+      icon: 'fa-temperature-arrow-up', accent: '#ef4444', minParams: 1,
+      series: [
+        { param: 'fRtdOver140',  axis: 'left',  color: '#f87171', type: 'line', width: 2.5 },
+        { param: 'rRtdOver140',  axis: 'left',  color: '#fb923c', type: 'line', width: 2.5 },
+        { param: 'retarderTemp', axis: 'right', color: '#fbbf24', type: 'line', width: 1.5, dashed: true }
+      ]
+    },
+    {
+      // [T10 2026-10-09] DUTY GAS BUANG PER GRUP SILINDER — HD785 (mesin V12).
+      // LF = Left-Bank Front, LR = Left-Bank Rear, RF = Right-Bank Front,
+      // RR = Right-Bank Rear. Perbedaan besar antar grup = injeksi / kompresi
+      // tidak seimbang PADA GRUP ITU. Sensor grup rusak (DGT5KB/DGT6KB) akan
+      // mem-mask kanal terkait, dan gerbang kewarasan termal menandai nilai
+      // mustahil (mis. 590.649 detik pada interval 200 jam) — jadi chart ini
+      // tetap jujur meski sensor bermasalah.
+      id: 'group-hd785-exhaust', title: 'Exhaust Duty per Cylinder Group',
+      subtitle: 'Durasi gas buang &gt;800 \u00B0C per grup silinder (detik) \u2014 deteksi ketidakseimbangan injeksi/kompresi',
+      icon: 'fa-fire-flame-simple', accent: '#f97316', minParams: 1,
+      series: [
+        { param: 'lfExhOver800', axis: 'left', color: '#fb7185', type: 'line', width: 2 },
+        { param: 'lrExhOver800', axis: 'left', color: '#f472b6', type: 'line', width: 2 },
+        { param: 'rfExhOver800', axis: 'left', color: '#38bdf8', type: 'line', width: 2 },
+        { param: 'rrExhOver800', axis: 'left', color: '#22d3ee', type: 'line', width: 2 }
       ]
     }
   ];
@@ -392,7 +569,159 @@
     rExhTempMax:  { warn: 550.0, crit: 650.0, mode: 'high', label: 'R Exhaust Temp Max' },
     tcOilTempMax: { warn: 110.0, crit: 120.0, mode: 'high', label: 'T/C Oil Temp Max' },
     tmMainPressMax:{ warn: 2.2,  crit: 1.8,  mode: 'low',  label: 'TM Main Press Max' },
+
+    // -----------------------------------------------------------------------
+    // [T5.2 2026-10-08 · OEM 2026-10-09] THRESHOLD T/M TREND D375A.
+    // -----------------------------------------------------------------------
+    // STATUS: `provisional` DIHAPUS. Nilai kini berbasis standar service
+    // Komatsu (limit trigger/fill clutch & temperatur oli T/C), bukan lagi
+    // sekadar nilai awal. `source` menjelaskan asal tiap angka.
+    //   tmTrgTime F/R 150 msec  — fill time arah maju/mundur (service normal)
+    //   tmTrgTime 1-3 200 msec  — fill time per gigi (service normal)
+    //   tcOilOver130 warn 300 s — duty oli T/C > 130 °C (warning OEM)
+    //   tcOilOver140 warn  60 s — duty oli T/C > 140 °C (limit OEM)
+    // CATATAN penting: `tcOilOver130` SENGAJA ber-ambang LEBIH TINGGI
+    // (300/1800) daripada `tcOilOver140` (60/300) — suhu 130 °C lebih sering
+    // dan lebih lama tercapai sehingga durasi "normal"-nya lebih panjang.
+    // Jangan tertukar.
+    // -----------------------------------------------------------------------
+    // [B-4 2026-10-13] Label diselaraskan dengan PARAMS (lihat catatan di sana):
+    // ini TRIGGER time (respons ECMV), bukan clutch fill time.
+    tmTrgTimeF:    { warn: 150,  crit: 200,  mode: 'high', label: 'F Trigger Time',  source: 'OEM service normal trigger time' },
+    tmTrgTimeR:    { warn: 150,  crit: 200,  mode: 'high', label: 'R Trigger Time',  source: 'OEM service normal trigger time' },
+    tmTrgTime1:    { warn: 200,  crit: 250,  mode: 'high', label: '1st Gear Trigger Time', source: 'OEM service normal fill time' },
+    tmTrgTime2:    { warn: 200,  crit: 250,  mode: 'high', label: '2nd Gear Trigger Time', source: 'OEM service normal fill time' },
+    tmTrgTime3:    { warn: 200,  crit: 250,  mode: 'high', label: '3rd Gear Trigger Time', source: 'OEM service normal fill time' },
+    tcOilOver130:  { warn: 300,  crit: 1800, mode: 'high', label: 'T/C Oil over 130\u00B0C', source: 'OEM T/C oil warning 130 \u00B0C (duty)' },
+    tcOilOver140:  { warn: 60,   crit: 300,  mode: 'high', label: 'T/C Oil over 140\u00B0C', source: 'OEM T/C oil limit 140 \u00B0C (duty)' },
+    // CATATAN: `tcOilOver120` SENGAJA TANPA THRESHOLD. Oli T/C melewati 120 °C
+    // adalah hal NORMAL pada operasi dozing berat; parameter ini dipakai sebagai
+    // indikator DUTY (beban termal), bukan alarm. Lihat spek T5.2.
     largePumpPress:{ warn: 20.0, crit: 15.0, mode: 'low',  label: 'Large Pump Press Max' },
+
+    // -----------------------------------------------------------------------
+    // [HD785 2026-10-09] THRESHOLD CHASSIS TREND — DASAR AWAL-UMUR + KAIDAH
+    // SERVICE. (Judul lama "SUMBER OEM / SERVICE LIMIT" menyesatkan — lihat
+    // koreksi di bawah.)
+    // -----------------------------------------------------------------------
+    // ⚠ STATUS JUJUR [KOREKSI 2026-10-12] — BACA SEBELUM MENGUBAH APA PUN.
+    //
+    // Komentar versi sebelumnya mengklaim nilai baseline di bawah adalah
+    // "spesifikasi mekanis HD785-7 ... bukan sekadar observasi". **KLAIM ITU
+    // TERLALU KUAT.** Penelusuran ke spek asal (`SPEK_HD785_CHASSIS_CLUTCH.md`
+    // D2 & risiko R5-HD) menunjukkan angka Low 305 / High 296 / 1st 731 /
+    // 2nd 686 / 3rd 388 / 4th 355 / R 908 msec berasal dari **SNAPSHOT
+    // PERTAMA SATU UNIT** (SN 31991) — terbaca langsung di barisnya:
+    //     ...,305,296,731,686,388,355,908,17,11,...
+    // Jadi itu **dasar awal-umur satu unit**, bukan angka Shop Manual.
+    //
+    // Pencarian literatur resmi Komatsu (2026-10-12) TIDAK menghasilkan satu
+    // pun tabel "standard value" HD785 yang dapat diakses: seluruh Shop
+    // Manual (SEN01274 / TEN00694) berada di belakang pembayaran, dan laman
+    // produk HD785-8 mengembalikan 404. Karena itu **tidak ada angka OEM baru
+    // yang dapat dipertanggungjawabkan** untuk dimasukkan ke sini.
+    //
+    // YANG DAPAT DIPERTANGGUNGJAWABKAN:
+    //   • KAIDAH-nya (bukan angkanya): clutch pack dinilai dari KENAIKAN
+    //     RELATIF fill time terhadap kondisi awal-umur, bukan nilai absolut.
+    //     warn = dasar × ~1,30 · crit = dasar × ~1,60.
+    //   • Angka di bawah = dasar unit SN 31991 × 1,32/1,58, dibulatkan ke
+    //     puluhan msec (≈ 1,30×/1,60×).
+    //
+    // RISIKO R5-HD (MASIH TERBUKA, jangan dihapus dari daftar):
+    //   Dasar diambil dari SATU unit. Bila unit HD785 lain memakai varian T/M
+    //   berbeda, dasar ini TIDAK berlaku untuk unit tersebut.
+    //   Jalan keluar: kumpulkan `chas_trend0` dari ≥5 unit HD785, lalu
+    //   kalibrasi ulang memakai MEDIAN dasar antar-unit.
+    //
+    // `provisional: true` tetap dihapus — bukan karena angkanya naik derajat
+    // menjadi OEM, melainkan karena field `source` kini menyatakan asalnya
+    // secara eksplisit dan nilainya DAPAT di-edit di halaman Pengaturan.
+    //   • DUTY TERMAL = DURASI (detik) melewati temperatur peringatan OEM.
+    //     Ambang berbasis "berapa lama", bukan "apakah" — melewati ambang
+    //     sekali adalah normal. Warn/crit = akumulasi per interval 200 jam.
+    //
+    // Nilai & sumber tiap grup:
+    //   tmFill*      — fill time clutch T/M (msec). OEM: service limit
+    //                  +30 %/+60 % dari baseline unit-baru tiap posisi.
+    //                  WARN = wear mulai terukur · CRIT = perlu overhaul.
+    //   *RtdOver140  — durasi oli retarder > 140 °C (detik/interval).
+    //                  OEM: warning retarder oil 120 °C, LIMIT 140 °C.
+    //                  140 °C = limit, jadi durasi di atasnya = bahaya:
+    //                  warn 60 s (≈1 jam pamakai berat), crit 300 s.
+    //   *ExhOver800  — PERSEN WAKTU jendela dengan gas buang > 800 °C.
+    //                  ⚠ [KOREKSI 2026-10-12] Komentar lama di sini menulis
+    //                  "detik/interval · warn 300 s, crit 1800 s". Itu SUDAH
+    //                  TIDAK BERLAKU sejak B15 (2026-10-10) mengubah satuan
+    //                  ke % jendela; nilai sebenarnya di bawah = 1,0 / 8,0 %.
+    //                  Komentar basi ini dibiarkan 2 hari dan berpotensi
+    //                  menyesatkan siapa pun yang menyetel ulang ambang.
+    //                  Dasar: 800 °C dipakai sebagai ambang alarm pelindung
+    //                  valve/turbo (EGT normal maks ~700 °C pada beban penuh).
+    //                  Angka 1,0/8,0 % sendiri BELUM TERKALIBRASI — lihat
+    //                  `source` tiap entri.
+    //   tcOilOver130/140 — duty oli torque converter (D375A, grup T/M Trend).
+    //   tmTrgTime*   — trigger/fill time clutch D375A (msec); limit service
+    //                  normal 150 msec (F/R) & 200 msec (per gigi).
+    // -----------------------------------------------------------------------
+    // `source` di bawah SENGAJA menyebut "dasar 1 unit (SN 31991)" — teks ini
+    // tampil di kolom "Sumber / Asal Nilai" halaman Pengaturan, jadi operator
+    // harus melihat bahwa ini BUKAN angka Shop Manual (risiko R5-HD).
+    tmFillLow:     { warn: 400,  crit: 490,  mode: 'high', label: 'Low Clutch Fill Time',  source: 'Kaidah service \u00d71,32/1,58 \u00b7 dasar 305 msec dari 1 unit (SN 31991) \u2014 BUKAN Shop Manual' },
+    tmFillHigh:    { warn: 390,  crit: 470,  mode: 'high', label: 'High Clutch Fill Time', source: 'Kaidah service \u00d71,32/1,58 \u00b7 dasar 296 msec dari 1 unit (SN 31991) \u2014 BUKAN Shop Manual' },
+    tmFill1:       { warn: 950,  crit: 1170, mode: 'high', label: '1st Clutch Fill Time',  source: 'Kaidah service \u00d71,30/1,60 \u00b7 dasar 731 msec dari 1 unit (SN 31991) \u2014 BUKAN Shop Manual' },
+    tmFill2:       { warn: 890,  crit: 1100, mode: 'high', label: '2nd Clutch Fill Time',  source: 'Kaidah service \u00d71,30/1,60 \u00b7 dasar 686 msec dari 1 unit (SN 31991) \u2014 BUKAN Shop Manual' },
+    tmFill3:       { warn: 500,  crit: 620,  mode: 'high', label: '3rd Clutch Fill Time',  source: 'Kaidah service \u00d71,29/1,60 \u00b7 dasar 388 msec dari 1 unit (SN 31991) \u2014 BUKAN Shop Manual' },
+    tmFill4:       { warn: 460,  crit: 570,  mode: 'high', label: '4th Clutch Fill Time',  source: 'Kaidah service \u00d71,30/1,61 \u00b7 dasar 355 msec dari 1 unit (SN 31991) \u2014 BUKAN Shop Manual' },
+    tmFillR:       { warn: 1180, crit: 1450, mode: 'high', label: 'R Clutch Fill Time',    source: 'Kaidah service \u00d71,30/1,60 \u00b7 dasar 908 msec dari 1 unit (SN 31991) \u2014 BUKAN Shop Manual' },
+
+    // Duty termal: hanya TINGKAT TERTINGGI diberi ambang. Tingkat bawah
+    // (120-/130-, 700-/750-) dibiarkan TANPA ambang sebagai indikator beban
+    // kerja — alasan yang sama dengan `tcOilOver120`. Melewati 120 °C pada
+    // retarder saat turunan berbeban, atau 700 °C pada gas buang saat hauling
+    // menanjak, adalah hal NORMAL dan tidak boleh memicu alarm.
+    // 140 °C = ambang kolom pada berkas itu sendiri (`R RTD Oil T.140-`), jadi
+    // TEMPERATUR-nya memang berasal dari Komatsu. Yang BELUM terkalibrasi
+    // adalah DURASI yang dianggap wajar (60 s / 300 s per interval 200 jam).
+    fRtdOver140:   { warn: 60,  crit: 300, mode: 'high', label: 'F Retarder Oil >140\u00B0C', source: 'Suhu 140 \u00B0C = ambang kolom berkas (Komatsu) \u00b7 durasi 60/300 s USULAN, belum terkalibrasi' },
+    rRtdOver140:   { warn: 60,  crit: 300, mode: 'high', label: 'R Retarder Oil >140\u00B0C', source: 'Suhu 140 \u00B0C = ambang kolom berkas (Komatsu) \u00b7 durasi 60/300 s USULAN, belum terkalibrasi' },
+    lfExhOver800:  { warn: 1.0, crit: 8.0, mode: 'high', label: 'LF Exhaust >800\u00B0C', source: 'Suhu 800 \u00B0C = ambang kolom berkas (Komatsu) \u00b7 % waktu 1,0/8,0 USULAN, belum terkalibrasi' },
+    lrExhOver800:  { warn: 1.0, crit: 8.0, mode: 'high', label: 'LR Exhaust >800\u00B0C', source: 'Suhu 800 \u00B0C = ambang kolom berkas (Komatsu) \u00b7 % waktu 1,0/8,0 USULAN, belum terkalibrasi' },
+    rfExhOver800:  { warn: 1.0, crit: 8.0, mode: 'high', label: 'RF Exhaust >800\u00B0C', source: 'Suhu 800 \u00B0C = ambang kolom berkas (Komatsu) \u00b7 % waktu 1,0/8,0 USULAN, belum terkalibrasi' },
+    rrExhOver800:  { warn: 1.0, crit: 8.0, mode: 'high', label: 'RR Exhaust >800\u00B0C', source: 'Suhu 800 \u00B0C = ambang kolom berkas (Komatsu) \u00b7 % waktu 1,0/8,0 USULAN, belum terkalibrasi' },
+    // CATATAN: `Low/High/4th Trg. Time` SENGAJA TANPA AMBANG. Pada data nyata
+    // nilainya hanya 3-18 msec dan nyaris tidak bergerak sepanjang 286.000 jam
+    // SMR — ia mengukur respons solenoid ECMV, bukan keausan clutch pack.
+    // Memberinya ambang hanya akan menghasilkan derau, bukan temuan.
+
+    // -----------------------------------------------------------------------
+    // [PC2000 2026-10-10 — T3] DUTY GAS BUANG EXCAVATOR (`chas_trend0`).
+    // -----------------------------------------------------------------------
+    // Untuk `lfExhOver800`/`lrExhOver800`/`rfExhOver800`/`rrExhOver800`,
+    // ambang TRUCK di atas TIDAK dipakai ulang: nilainya dalam DETIK absolut
+    // per jendela HD785 (~40 jam), sedangkan jendela PC2000 ~200 jam sehingga
+    // detik absolut tidak sebanding. Nilai di bawah memakai PERSEN JENDELA.
+    //
+    // ⚠ WAJIB SAMA PERSIS dengan `TH_EXCAVATOR` di js/vhms-profiles.js.
+    //   `analysis.thresholdSet` memakai objek PROFIL (TH_EXCAVATOR),
+    //   sedangkan heatmap/beberapa jalur lain membaca `cfg.THRESHOLDS`. Bila
+    //   hanya salah satu yang diisi, heatmap menampilkan "—" dan ranking
+    //   melewati parameter itu. Dijaga test suite ("ANTI-DRIFT: nilai
+    //   threshold profil SAMA dengan cfg.THRESHOLDS").
+    //
+    // ⚠ SATUAN = PERSEN JENDELA, bukan detik mentah. T4 (`vhms-analytics.js`)
+    //   menormalkan `100 × detik / (ΔSMR × 3600)`.
+    //
+    // ⚠ USULAN — BELUM TERKALIBRASI LAPANGAN (R2). `source` memuat kata
+    //   "USULAN" agar badge PROV muncul di halaman Pengaturan.
+    lfExhOver700: { warn: 5.0,  crit: 25.0, mode: 'high', label: 'LF Exhaust >700\u00B0C (% waktu)', source: 'USULAN — belum terkalibrasi' },
+    lfExhOver750: { warn: 3.0,  crit: 15.0, mode: 'high', label: 'LF Exhaust >750\u00B0C (% waktu)', source: 'USULAN — belum terkalibrasi' },
+    lrExhOver700: { warn: 5.0,  crit: 25.0, mode: 'high', label: 'LR Exhaust >700\u00B0C (% waktu)', source: 'USULAN — belum terkalibrasi' },
+    lrExhOver750: { warn: 3.0,  crit: 15.0, mode: 'high', label: 'LR Exhaust >750\u00B0C (% waktu)', source: 'USULAN — belum terkalibrasi' },
+    rfExhOver700: { warn: 5.0,  crit: 25.0, mode: 'high', label: 'RF Exhaust >700\u00B0C (% waktu)', source: 'USULAN — belum terkalibrasi' },
+    rfExhOver750: { warn: 3.0,  crit: 15.0, mode: 'high', label: 'RF Exhaust >750\u00B0C (% waktu)', source: 'USULAN — belum terkalibrasi' },
+    rrExhOver700: { warn: 5.0,  crit: 25.0, mode: 'high', label: 'RR Exhaust >700\u00B0C (% waktu)', source: 'USULAN — belum terkalibrasi' },
+    rrExhOver750: { warn: 3.0,  crit: 15.0, mode: 'high', label: 'RR Exhaust >750\u00B0C (% waktu)', source: 'USULAN — belum terkalibrasi' }
   };
 
   /* -----------------------------------------------------------------------
@@ -463,7 +792,52 @@
     pump1R:        4,
     pump2F:        6,
     pump2R:        4,
-    fuelRate:      2    // indikator ekonomi (bukan keselamatan)
+    fuelRate:      2,   // indikator ekonomi (bukan keselamatan)
+    // [T5.3 2026-10-08] Parameter T/M Trend (file tm_trend0.CSV).
+    tmTrgTimeF:    8,   // clutch fill time arah maju -> keausan clutch pack
+    tmTrgTimeR:    8,   // clutch fill time arah mundur
+    tmTrgTime1:    6,   // waktu trigger gigi 1
+    tmTrgTime2:    6,   // waktu trigger gigi 2
+    tmTrgTime3:    6,   // waktu trigger gigi 3
+    tcOilOver140:  9,   // duty termal TERTINGGI -> degradasi oli tercepat
+    tcOilOver130:  7,   // duty termal menengah
+    tcOilOver120:  0,   // tampil saja, TIDAK diskor (normal terjadi)
+    // [HD785 2026-10-09] Parameter Chassis Trend (file chas_trend0.CSV).
+    // Fill time = indikator keausan clutch pack yang paling langsung, jadi
+    // bobotnya disetarakan `tmTrgTime*` D375A (8 utk arah, 6 utk per-gigi).
+    tmFillLow:     8,
+    tmFillHigh:    8,
+    tmFillR:       8,
+    tmFill1:       6,
+    tmFill2:       6,
+    tmFill3:       6,
+    tmFill4:       6,
+    // Duty termal retarder = SAFETY (brake fading saat turunan berbeban),
+    // karena itu bobotnya mengikuti `retarderTemp` (14), bukan duty T/C (9).
+    fRtdOver140:   14,
+    rRtdOver140:   14,
+    // Duty gas buang per grup silinder: setara `fExhTempMax`/`rExhTempMax` (9),
+    // dibagi 4 grup agar satu grup bermasalah tidak langsung mendominasi.
+    lfExhOver800:  7,
+    lrExhOver800:  7,
+    rfExhOver800:  7,
+    rrExhOver800:  7,
+    // [PC2000 2026-10-10 — T3] Duty gas buang tingkat 700 & 750.
+    // HANYA ada pada excavator (`chas_trend0.CSV` PC2000 punya 3 tingkat).
+    // Bobot MENURUN seiring ambang naik: melewati 800 °C adalah bahaya yang
+    // jauh lebih besar daripada 700 °C, jadi tingkat bawah tidak boleh
+    // menyamai tingkat atas — kalau sama, tiga tingkat yang mengukur hal
+    // serupa akan TRIPLE COUNTING pada satu grup silinder.
+    //   700 °C = beban termal tinggi (wajar saat digging berat) -> 4
+    //   750 °C = mendekati batas material valve/turbo            -> 6
+    lfExhOver700:  4,
+    lfExhOver750:  6,
+    lrExhOver700:  4,
+    lrExhOver750:  6,
+    rfExhOver700:  4,
+    rfExhOver750:  6,
+    rrExhOver700:  4,
+    rrExhOver750:  6
   };
 
   // Pilar/kelompok parameter untuk analisis distribusi penyebab.
@@ -486,6 +860,38 @@
     retarderTemp: 'BRAKE',
     tcOilTempMax: 'POWERTRAIN',
     tmMainPressMax: 'POWERTRAIN',
+    // [T5.3 2026-10-08] Seluruh parameter T/M Trend masuk pilar POWERTRAIN —
+    // clutch fill time & duty termal T/C keduanya komponen powertrain.
+    tmTrgTimeF:   'POWERTRAIN',
+    tmTrgTimeR:   'POWERTRAIN',
+    tmTrgTime1:   'POWERTRAIN',
+    tmTrgTime2:   'POWERTRAIN',
+    tmTrgTime3:   'POWERTRAIN',
+    tcOilOver120: 'POWERTRAIN',
+    tcOilOver130: 'POWERTRAIN',
+    tcOilOver140: 'POWERTRAIN',
+    // [HD785 2026-10-09] Chassis Trend: fill time = POWERTRAIN (clutch pack),
+    // duty retarder = BRAKE (keselamatan), duty gas buang = ENGINE.
+    tmFillLow:    'POWERTRAIN',
+    tmFillHigh:   'POWERTRAIN',
+    tmFillR:      'POWERTRAIN',
+    tmFill1:      'POWERTRAIN',
+    tmFill2:      'POWERTRAIN',
+    tmFill3:      'POWERTRAIN',
+    tmFill4:      'POWERTRAIN',
+    tmTrgTimeLow: 'POWERTRAIN',
+    tmTrgTimeHigh:'POWERTRAIN',
+    tmTrgTime4:   'POWERTRAIN',
+    fRtdOver120:  'BRAKE',
+    fRtdOver130:  'BRAKE',
+    fRtdOver140:  'BRAKE',
+    rRtdOver120:  'BRAKE',
+    rRtdOver130:  'BRAKE',
+    rRtdOver140:  'BRAKE',
+    lfExhOver700: 'ENGINE', lfExhOver750: 'ENGINE', lfExhOver800: 'ENGINE',
+    lrExhOver700: 'ENGINE', lrExhOver750: 'ENGINE', lrExhOver800: 'ENGINE',
+    rfExhOver700: 'ENGINE', rfExhOver750: 'ENGINE', rfExhOver800: 'ENGINE',
+    rrExhOver700: 'ENGINE', rrExhOver750: 'ENGINE', rrExhOver800: 'ENGINE',
     fuelRate:     'ECONOMY'
   };
 
@@ -516,8 +922,300 @@
     COOLING:   1.1,
     BRAKE:     1.3,   // HD truck: prioritas keselamatan
     ECONOMY:   0.6,
-    OTHER:     1.0
+    OTHER:     1.0,
+    // [T4.3 2026-10-08] Pilar EVENT — kontribusi dari riwayat fault/alarm
+    // (fault0.CSV). Nilai awal 1.0 = NETRAL terhadap pilar lain; sengaja
+    // tidak dibuat dominan sampai divalidasi lapangan. Lihat README §6.2.
+    EVENT:     1.0
   };
+
+  /* =======================================================================
+   * 2c. [T2 2026-10-08] DATA-QUALITY GATE — PETA KODE FAULT -> PARAMETER
+   * =======================================================================
+   * Ketika sebuah SENSOR gagal, nilai parameter yang bergantung padanya
+   * TIDAK LAYAK dipercaya. Tanpa gerbang ini, parameter dari sensor rusak
+   * tetap diskor dan dapat membalik arah ranking kritikalitas.
+   *
+   * Sumber arti kode = kolom `Error Message` pada `fault0.CSV` itu sendiri
+   * (bukan tebakan). Sentinel '*' berarti "SELURUH parameter".
+   *
+   * ⚠ Cakupan sengaja SEMPIT (hanya kode yang terbukti ada di data contoh)
+   *   — lihat docs/STATUS_PROYEK.md §2.4 butir 1. Kode tak
+   *   dikenal TIDAK mem-mask apa pun (tetap dihitung di pilar EVENT).
+   * ======================================================================= */
+  var ALL_PARAMS = '*';
+  var FAULT_SENSOR_MAP = {
+    // "Exhaust temp. sensor F failure" -> suhu gas buang bank kiri
+    //
+    // [HD785 2026-10-09] KODE YANG SAMA DIPAKAI DUA KELUARGA dengan nama
+    // parameter berbeda: D375A menulis satu nilai per bank (`fExhTempMax`),
+    // HD785 menulis DURASI per grup silinder (`lfExh*`). Karena itu kedua
+    // daftar DIGABUNG dalam satu entri — mask atas parameter yang tidak ada
+    // pada sebuah unit TIDAK berefek (tanpa data -> dilewati formula), jadi
+    // penggabungan ini aman dan menghindari kunci objek duplikat.
+    DGT5KA: { params: ['fExhTempMax'], msg: 'Exhaust temp. sensor F failure' },
+    DGT5KB: { params: ['fExhTempMax', 'lfExhOver700', 'lfExhOver750', 'lfExhOver800'],
+              msg: 'Exhaust temp. sensor F / LBF failure' },
+    // "Exhaust temp. sensor R failure" -> suhu gas buang bank kanan
+    DGT6KA: { params: ['rExhTempMax'], msg: 'Exhaust temp. sensor R failure' },
+    DGT6KB: { params: ['rExhTempMax', 'rfExhOver700', 'rfExhOver750', 'rfExhOver800'],
+              msg: 'Exhaust temp. sensor R / RBF failure' },
+    // "Blowby pressure sensor failure" -> tekanan blowby crankcase
+    DHE5KB: { params: ['blowbyMax'], msg: 'Blowby pressure sensor failure' },
+    // "T/M main pressure sensor failure" -> tekanan main transmisi
+    DHT3KX: { params: ['tmMainPressMax', 'tmMainPressAve'], msg: 'T/M main pressure sensor failure' },
+    // "Abnormality in 24V source system (VHMS)" -> suplai daya logger
+    // abnormal, sehingga SELURUH pembacaan tidak dapat dipercaya.
+    DBB6KP: { params: [ALL_PARAMS], msg: 'Abnormality in 24V source system (VHMS)' },
+    // Kegagalan komunikasi (CAN-NET / KOM-net) -> data bisa hilang/tertunda
+    // di seluruh kanal, jadi SELURUH parameter juga ditandai.
+    DBBRKR: { params: [ALL_PARAMS], msg: 'CAN-NET sys (J1939) Error' },
+    DBBQKR: { params: [ALL_PARAMS], msg: 'KOM-net communication failure' },
+
+    /* ---------------------------------------------------------------------
+     * [HD785 2026-10-09] KODE SENSOR HD785-7 (dari `fault0.CSV` SN 31991).
+     * -------------------------------------------------------------------
+     * Arti kode dibaca APA ADANYA dari kolom `Error Message` berkas itu,
+     * bukan ditebak. Pemetaan grup silinder mengikuti penamaan pesan:
+     *   LBF = Left-Bank Front  -> lfExh*     LBR = Left-Bank Rear  -> lrExh*
+     *   RBF = Right-Bank Front -> rfExh*     RBR = Right-Bank Rear -> rrExh*
+     *
+     * ⚠ HURUF BESAR/KECIL BERMAKNA. Pada berkas HD785, `DGT6KB` (huruf besar)
+     *   = "Exhaust Temp. Sensor RBF Failure" sedangkan `dGT6KB` (huruf kecil
+     *   di depan) = "Exhaust Temp. Sensor RBR Failure" — GRUP SILINDER YANG
+     *   BERBEDA. Hal yang sama untuk `DGT5KB` (LBF) vs `dGT5KB` (LBR).
+     *
+     * [R2-HD 2026-10-09 — DIPERBAIKI TUNTAS] Sebelumnya kode huruf kecil
+     *   SENGAJA tidak didaftarkan karena diasumsikan pencarian mask
+     *   meng-UPPERCASE kode sehingga akan bertabrakan dengan kode huruf
+     *   besar. ASUMSI ITU TERBUKTI SALAH: `VHMS_FAULT_PARSER` mempertahankan
+     *   huruf asli (`String(code).trim()`, TANPA toUpperCase) dan
+     *   `applyFaultMask()` mencocokkan `byCode[code]` secara persis
+     *   (case-sensitive). Terverifikasi empiris: `DGT6KB` & `dGT6KB` menjadi
+     *   kunci terpisah.
+     *   => Karena itu kode huruf kecil kini DIDAFTARKAN dan BENAR mem-mask
+     *      grup silinder-nya sendiri (`dGT5KB`->lrExh*, `dGT6KB`->rrExh*).
+     *      Jaring pengaman gerbang kewarasan termal (T6/D9) TETAP ada sebagai
+     *      lapisan kedua yang independen.
+     *
+     * SENGAJA TIDAK DIDAFTARKAN (tetap terhitung di pilar EVENT lewat
+     * bucket UNKNOWN, tetapi tidak mem-mask apa pun):
+     *   - `DHP7KA`/`DHP7KY` sensor tekanan suspensi — tidak ada di PARAMS.
+     *   - `DJF1KA` sensor level bahan bakar — tidak ada di PARAMS.
+     *   - `DLF1KA`/`DLF2KA`/`DLT3KA` sensor kecepatan poros transmisi —
+     *     memengaruhi perhitungan clutch slip pada ECU, tetapi TIDAK
+     *     memetakan satu-ke-satu ke parameter yang kita skor.
+     * ------------------------------------------------------------------- */
+
+    // "Exhaust temp. sensor LBR failure" (huruf kecil) -> grup LR (rear).
+    // Grup LR/RR dipakai HD785 sebagai durasi >700/750/800 °C per grup.
+    dGT5KB: { params: ['lrExhOver700', 'lrExhOver750', 'lrExhOver800'],
+              msg: 'Exhaust temp. sensor LBR failure (LR group)' },
+    // "Exhaust temp. sensor RBR failure" (huruf kecil) -> grup RR (rear).
+    dGT6KB: { params: ['rrExhOver700', 'rrExhOver750', 'rrExhOver800'],
+              msg: 'Exhaust temp. sensor RBR failure (RR group)' },
+    // Kode huruf kecil juga dapat memetakan bank exhaust D375A (satu nilai
+    // per bank) bila unit itu memakai kode yang sama — penggabungan aman
+    // (mask atas param yang tidak ada = tanpa efek).
+    dGT5KA: { params: ['fExhTempMax'], msg: 'Exhaust temp. sensor F failure (lowercase)' },
+    dGT6KA: { params: ['rExhTempMax'], msg: 'Exhaust temp. sensor R failure (lowercase)' },
+
+    // "Drop in Retarder Controller Battery Direct Power Source" -> suplai
+    // daya controller retarder turun, sehingga SELURUH pembacaan kanal
+    // retarder (duty oli F/R) tidak layak dipercaya.
+    DB13KK: { params: ['fRtdOver120', 'fRtdOver130', 'fRtdOver140',
+                       'rRtdOver120', 'rRtdOver130', 'rRtdOver140'],
+              msg: 'Drop in Retarder Controller Battery Direct Power Source' },
+
+    /* =====================================================================
+     * [PC2000 2026-10-10 — T6] KODE FAULT EXCAVATOR PC2000 (SN 20020).
+     * =====================================================================
+     * Pemetaan di bawah membuat kode fault PC2000 punya PILAR yang benar
+     * (`summarizeByPillar` menurunkan pilar dari param -> RANKING_PILLARS).
+     * Sebelum ini 28 kode PC2000 tidak punya entri sehingga SEMUA event-nya
+     * jatuh ke bucket 'UNKNOWN' (495 dari 600 event = 82,5 %) — sebaran
+     * penyebab tidak informatif dan tidak menambah bobot pilar mana pun.
+     *
+     * PESAN dibaca APA ADANYA dari kolom `Error Message` `fault0.CSV`
+     * SN 20020, bukan ditebak.
+     *
+     * DUA JENIS ENTRI:
+     *   (a) KEGAGALAN SENSOR -> `params` diisi parameter yang bergantung
+     *       padanya, sehingga nilainya DIKECUALIKAN dari skor (gerbang
+     *       kualitas data). Contoh: sensor PPC, EPC, auto-grease.
+     *   (b) ALARM NILAI (mis. High Exhaust Temp, Water Overheat) -> data
+     *       DIPERCAYA, jadi TIDAK boleh mem-mask param apa pun. Untuk
+     *       memasukkannya ke pilar tanpa mem-mask, pakai `pillarOnly: true`.
+     *
+     * ⚠ `pillarOnly` adalah field BARU (lihat `summarizeByPillar` &
+     *   `faultSensorLookup`). Entri dengan `pillarOnly` hanya menyumbang
+     *   PILAR, tidak menyentuh gerbang kualitas data.
+     * ===================================================================== */
+
+    /* --- (b) ALARM NILAI -> pilar saja, TIDAK mem-mask --- */
+    'f@BYNS': { pillarOnly: 'ENGINE', msg: 'High LBR CYL. Exhaust Temp' },
+    'f@BYNR': { pillarOnly: 'ENGINE', msg: 'Very High LBR CYL. Exhaust Temp' },
+    'B@BCNS': { pillarOnly: 'COOLING', msg: 'Engine Water Overheat' },
+    'F@BBZL': { pillarOnly: 'ENGINE', msg: 'High Blowby Pressure' },
+    '6014NX': { pillarOnly: 'HYDRAULIC', msg: 'Hydraulic Oil Filter Clogging' },
+    '7@HCZL': { pillarOnly: 'HYDRAULIC', msg: 'VR2/P2F Relief Press Abnormality' },
+    'DW45KA': { pillarOnly: 'BRAKE', msg: 'Swing Brake Sol. Open Circuit' },
+    'DW45KB': { pillarOnly: 'BRAKE', msg: 'Swing Brake Sol. Short Circuit' },
+    'DWA5KA': { pillarOnly: 'HYDRAULIC', msg: 'Auto Grease Sol.Open Circuit' },
+    '8800ZG': { pillarOnly: 'HYDRAULIC', msg: 'Auto Grease Abnormality' },
+    'DY2FMA': { pillarOnly: 'OTHER', msg: 'Upper Wiper Working Abnormality' },
+
+    /* --- (a) KEGAGALAN SENSOR / ELEKTRIK -> mem-mask param terkait --- */
+    // Kecepatan mesin: nilai engSpeed* tidak dapat dipercaya.
+    CA115: { params: ['engSpeedMax', 'engSpeedAve'], msg: 'Eng. Ne and Backup Speed Sensor Error' },
+    // EPC pompa: tekanan pompa terkait tidak dapat dipercaya.
+    DXAAKA: { params: ['pump1F'], msg: 'P1F EPC Sol. Open Circuit' },
+    DXABKA: { params: ['pump1R'], msg: 'P1R EPC Sol. Open Circuit' },
+    DXACKA: { params: ['pump2F'], msg: 'P2F EPC Sol. Open Circuit' },
+    DXADKA: { params: ['pump2R'], msg: 'P2R EPC Sol. Open Circuit' },
+    dA25KP: { params: ['pump2F', 'pump2R'], msg: 'Pump2 Sens Supply Vol Low Error' },
+    // Komunikasi modul pompa: HANYA pompa (bukan unit-wide) — lihat catatan
+    // di KB (`DA2TMC`). Menjadikannya unit-wide akan terlalu luas.
+    DA2TMC: { params: ['pump1F', 'pump1R', 'pump2F', 'pump2R'], msg: 'Pump Comm. ECM R/B Abnormality' },
+    // Sensor tekanan PPC: parameter terkait tidak ada di PARAMS trend
+    // (PPC hanya ada di snapshot), jadi dipetakan ke pilar lewat pillarOnly
+    // agar tetap menyumbang HYDRAULIC tanpa mem-mask apa pun.
+    DHS8KX: { pillarOnly: 'HYDRAULIC', msg: 'Boom Raise PPC Press.Sensor Abnormality' },
+    DHS9KX: { pillarOnly: 'HYDRAULIC', msg: 'Boom Lower PPC Press.Sensor Abnormality' },
+    DHS3KX: { pillarOnly: 'HYDRAULIC', msg: 'Arm Dig PPC Press. Sensor Abnormality' },
+    DHSCKX: { pillarOnly: 'HYDRAULIC', msg: 'Arm Dump PPC Press. Sensor Abnormality' },
+    DHS4KX: { pillarOnly: 'HYDRAULIC', msg: 'Bucket Curl PPC Press. Sensor Abnormality' },
+    DHSDKX: { pillarOnly: 'HYDRAULIC', msg: 'Bucket Dump PPC Press. Sensor Abnormality' },
+    DHSAKX: { pillarOnly: 'HYDRAULIC', msg: 'Swing Right PPC Press. Sensor Abnormality' },
+    DHSBKX: { pillarOnly: 'HYDRAULIC', msg: 'Swing Left PPC Press. Sensor Abnormality' },
+    DHPSKX: { params: ['autoGrsPress'], msg: 'Auto Grease Press Sensor Abnormality' },
+    // CAN hilang di monitor = SELURUH data berisiko -> unit-wide.
+    DAFRMC: { params: [ALL_PARAMS], msg: 'CAN Disconnected (Monitor Detected)' }
+  };
+
+  /* -----------------------------------------------------------------------
+   * 2c-bis. [T2.2] AMBANG MASK — hanya mask bila SIGNIFIKAN.
+   * ---------------------------------------------------------------------
+   * Tujuan: satu "kedipan" sensor (fault sesaat) TIDAK boleh membuang
+   * parameter dari penilaian.
+   *
+   * [KOREKSI 2026-10-12] SEBELUMNYA `activeAlwaysMasks: true` berarti
+   * SETIAP event yang masih terbuka (To Time kosong) LANGSUNG mem-mask
+   * parameter-nya untuk SELURUH UNIT — tanpa memandang count/durasi. Akibat
+   * yang dilaporkan operator: "data masih update tetapi ada keterangan
+   * SENSOR FAULT". Penyebabnya: satu event aktif ber-count 1 (mis. baris
+   * `E05PKE` pada berkas contoh) menandai kolom itu selamanya, walau nilainya
+   * sudah normal dan terus bergerak.
+   *
+   * ATURAN BARU (lebih proporsional, TETAP konservatif):
+   *   Mask berlaku bila SALAH SATU terpenuhi:
+   *     - count        >= minCount            (default 10), ATAU
+   *     - durasi       >= minDurationSec      (default 3600 s = 1 jam), ATAU
+   *     - MASIH AKTIF  DAN (count >= activeMinCount (2) ATAU durasi >=
+   *       activeMinDurationSec (300 s = 5 menit)).
+   *   Event aktif tetap LEBIH sensitif daripada event selesai (ambangnya
+   *   lebih rendah), tetapi "kedipan" count 1 dengan durasi ~0 tidak lagi
+   *   mem-mask. Setel `activeAlwaysMasks: true` HANYA bila Anda memang ingin
+   *   perilaku lama (event aktif apa pun = langsung mask).
+   *
+   * Nilai di bawah ini PLAIN OBJECT CONFIG (dapat di-tuning, dan dibaca
+   * ulang setiap kali applyFaultMask() dipanggil — bukan di-snapshot).
+   * --------------------------------------------------------------------- */
+  var FAULT_MASK_RULES = {
+    minCount: 10,               // total Count dalam window
+    minDurationSec: 3600,       // total durasi aktif dalam window (1 jam)
+    // Ambang KHUSUS saat event MASIH AKTIF (To Time kosong). Lebih rendah
+    // daripada ambang di atas, tetapi TIDAK nol.
+    //
+    // [KEJUJURAN SUMBER 2026-10-13] Kedua angka di bawah adalah **USULAN
+    // TEKNIS, BELUM TERKALIBRASI** — BUKAN dari Shop Manual Komatsu dan
+    // BUKAN hasil statistik populasi. Dasarnya hanya penalaran: count 1 +
+    // durasi ~0 = "kedipan" yang tidak membuktikan sensor rusak (kasus yang
+    // dilaporkan operator), sedangkan 2 kemunculan ATAU 5 menit menerus
+    // sudah merupakan pola. Kalibrasi yang benar menuntut perbandingan
+    // riwayat fault terhadap hasil penggantian sensor aktual (lihat
+    // STATUS_PROYEK §5 — keputusan tim). Konsekuensi bila salah: parameter
+    // IKUT/TIDAK IKUT formula skor, jadi angka ini harus ditinjau tim.
+    activeMinCount: 2,          // USULAN, belum terkalibrasi
+    activeMinDurationSec: 300,  // USULAN, belum terkalibrasi (5 menit)
+    /** Jejak sumber agar tidak disalahsangka sebagai angka OEM. */
+    source: 'activeMinCount/activeMinDurationSec = USULAN teknis, BELUM TERKALIBRASI ' +
+            '(bukan Shop Manual, bukan statistik populasi). minCount/minDurationSec ' +
+            'adalah ambang konservatif awal proyek, juga belum terkalibrasi.',
+    // [KOMPAT] Bila true -> perilaku LAMA dipertahankan (event aktif apa pun
+    // langsung mask). Default false (aturan proporsional di atas).
+    activeAlwaysMasks: false
+  };
+
+  /* -----------------------------------------------------------------------
+   * [PC2000 2026-10-10 — T6/D10] ALARM TURUNAN DARI SENSOR RUSAK.
+   * ---------------------------------------------------------------------
+   * MASALAH: beberapa kode adalah ALARM NILAI yang berasal dari sensor yang
+   * mungkin RUSAK. Contoh nyata (SN 20020): `dGT5KB` = "Exhaust Temp. Sensor
+   * LBR Failure" (sensor rusak) SEMENTARA `f@BYNR` = "Very High LBR CYL.
+   * Exhaust Temp" (alarm nilai) berbunyi dari PEMBACAAN SENSOR YANG SAMA.
+   *
+   * Bila keduanya dihitung, satu sensor rusak menghasilkan skor DUA KALI:
+   *   - lewat kontribusi fault (`__fault`, semua event dihitung), dan
+   *   - seandainya alarm nilai ikut dinilai.
+   * Ini DOUBLE COUNTING dan menggeser prioritas armada.
+   *
+   * ATURAN: bila sensor SUMBER terbukti rusak/mask-aktif, alarm turunannya
+   * DIANGGAP TIDAK DAPAT DIPERCAYA dan dikeluarkan dari:
+   *   - `eventCount` / `recurrence` / `activeCount` (faultScore),
+   *   - agregasi pilar.
+   * Nilainya tetap DILAPORKAN (tidak disembunyikan) lewat `suppressedDerived`
+   * agar dapat diaudit.
+   *
+   * Format: { KODE_ALARM: [kode sensor sumber, ...] }.
+   * --------------------------------------------------------------------- */
+  var FAULT_DERIVED_FROM = {
+    // LBR exhaust temp alarm <- sensor LBR (kiri-belakang) rusak.
+    'f@BYNS': ['dGT5KB', 'DGT5KB'],
+    'f@BYNR': ['dGT5KB', 'DGT5KB']
+  };
+
+  /**
+   * [T2] Ekspansi FAULT_SENSOR_MAP menjadi peta param -> info fault terburuk.
+   * Dipakai oleh gerbang kualitas data (vhms-validate) & agregasi pilar.
+   * @returns {object} { paramKey: [{code, msg, params, wholeUnit}] }
+   */
+  function faultSensorLookup() {
+    var out = {};
+    Object.keys(FAULT_SENSOR_MAP).forEach(function (code) {
+      var e = FAULT_SENSOR_MAP[code];
+      // [PC2000 2026-10-10 — T6] Entri `pillarOnly` (alarm nilai) TIDAK
+      // mem-mask parameter apa pun, jadi lewati di peta gerbang kualitas data.
+      if (e.pillarOnly) return;
+      var params = e.params || [];
+      var wholeUnit = params.indexOf(ALL_PARAMS) >= 0;
+      var targets = wholeUnit ? [ALL_PARAMS] : params;
+      targets.forEach(function (p) {
+        if (!out[p]) out[p] = [];
+        out[p].push({ code: code, msg: e.msg || '', wholeUnit: wholeUnit });
+      });
+    });
+    return out;
+  }
+
+  /** Daftar seluruh key parameter yang MUNGKIN ter-mask (tanpa '*').
+   * @returns {string[]}
+   */
+  function faultMaskableParams() {
+    var set = {};
+    Object.keys(FAULT_SENSOR_MAP).forEach(function (code) {
+      if (FAULT_SENSOR_MAP[code].pillarOnly) return;   // alarm nilai: tak mem-mask
+      (FAULT_SENSOR_MAP[code].params || []).forEach(function (p) {
+        if (p !== ALL_PARAMS) set[p] = true;
+      });
+    });
+    return Object.keys(set);
+  }
+
+  /** Key parameter VHMS yang lebih panjang dari ini (-4) kadang berupa
+   *  varian penamaan; dipakai oleh gerbang kualitas data (vhms-validate). */
+  var ALL_PARAMS_SENTINEL = ALL_PARAMS;
+
 
   // =======================================================================
   // [RULE DATA] DUA ATURAN SUMBER DATA (dipisah tegas)
@@ -703,6 +1401,74 @@
     { param: 'status',       align: 'center', isStatus: true }
   ];
 
+  /* -----------------------------------------------------------------------
+   * 5c. [HD785 2026-10-12] KOLOM TABEL LOG KHUSUS HAUL TRUCK (HD...).
+   * ---------------------------------------------------------------------
+   * Menerapkan KAIDAH YANG SAMA dengan TABLE_COLUMNS_DOZER (D375A): tabel
+   * log mentah menampilkan parameter yang RELEVAN bagi keluarga produk itu,
+   * bukan daftar generik. Truck menonjolkan SUHU PENGEREMAN (retarder/brake
+   * — terkait keselamatan saat turunan berbeban), tekanan boost (turbo),
+   * serta duty gas buang.
+   *
+   * [KOREKSI KLAIM 2026-10-13] Daftar PRIORITAS di bawah hanya memuat DUA
+   * grup silinder depan (`lfExhOver800`, `rfExhOver800`) agar tabel tidak
+   * melebar berlebihan — BUKAN keempat grup V12. `lrExhOver800`/
+   * `rrExhOver800` tetap muncul otomatis lewat auto-append di
+   * `tableColumnsFor()` bila unit itu memang punya datanya.
+   *
+   * STATUS pewarnaan (colored: true) memakai threshold effektif unit —
+   * `MODEL_THRESHOLDS` (mis. HD785) di atas `TH_TRUCK`. Kolom yang tidak
+   * punya ambang resmi (mis. `oilPressMax`) sengaja TIDAK diwarnai.
+   * --------------------------------------------------------------------- */
+  var TABLE_COLUMNS_TRUCK = [
+    { param: 'smr',        align: 'left'  },
+    { param: 'engSpeedAve', align: 'center' },
+    { param: 'blowbyMax',  align: 'center', colored: true },
+    { param: 'boostMax',   align: 'center', colored: true },
+    { param: 'oilPressMax', align: 'center' },
+    { param: 'coolantTemp', align: 'center', colored: true },
+    { param: 'engOilTemp', align: 'center', colored: true },
+    { param: 'hydTempMax', align: 'center', colored: true },
+    { param: 'retarderTemp', align: 'center', colored: true },
+    { param: 'brakeTemp',  align: 'center', colored: true },
+    { param: 'fuelRate',   align: 'center', colored: true },
+    { param: 'lfExhOver800', align: 'center', colored: true },
+    { param: 'rfExhOver800', align: 'center', colored: true },
+    { param: 'status',     align: 'center', isStatus: true }
+  ];
+
+  /* -----------------------------------------------------------------------
+   * 5d. [PC2000 2026-10-12] KOLOM TABEL LOG KHUSUS EXCAVATOR (PC...).
+   * ---------------------------------------------------------------------
+   * Kaidah yang sama dengan DOZER/TRUCK. Excavator menonjolkan SISTEM
+   * HIDROLIK yang menjadi beban utama mesin PC2000, serta duty gas buang.
+   *
+   * [KOREKSI KLAIM 2026-10-13] Daftar PRIORITAS hanya memuat `pump1F` &
+   * `pump2F` (bukan keempat pompa) dan dua grup exhaust depan — demi lebar
+   * tabel. `pump1R`/`pump2R`/`lrExhOver800`/`rrExhOver800` ikut otomatis
+   * lewat auto-append di `tableColumnsFor()` bila unit punya datanya.
+   *
+   * CATATAN: `*ExhOver800` pada excavator bersatuan % JENDELA (dilihat dari
+   * `chas_trend0.CSV`), dinormalkan oleh vhms-analytics.normalizeExhaustDuty.
+   * Kolom 700/750 sengaja tidak ditampilkan agar tabel tidak melebar; nilai
+   * lengkap tetap dapat dilihat pada chart grup & heatmap.
+   * --------------------------------------------------------------------- */
+  var TABLE_COLUMNS_EXCAVATOR = [
+    { param: 'smr',        align: 'left'  },
+    { param: 'engSpeedAve', align: 'center' },
+    { param: 'blowbyMax',  align: 'center', colored: true },
+    { param: 'oilPressHMin', align: 'center', colored: true },
+    { param: 'coolantTemp', align: 'center', colored: true },
+    { param: 'engOilTemp', align: 'center', colored: true },
+    { param: 'hydTempMax', align: 'center', colored: true },
+    { param: 'pump1F',     align: 'center' },
+    { param: 'pump2F',     align: 'center' },
+    { param: 'fuelRate',   align: 'center', colored: true },
+    { param: 'lfExhOver800', align: 'center', colored: true },
+    { param: 'rfExhOver800', align: 'center', colored: true },
+    { param: 'status',     align: 'center', isStatus: true }
+  ];
+
   /**
    * [DRY 2026-10-04 · B-4] Helper bersama: apakah sebuah parameter punya data
    * (non-null/non-NaN) pada minimal satu record sampel? Dulu didefinisikan
@@ -719,24 +1485,107 @@
   }
 
   /**
-   * Pilih daftar kolom tabel log yang relevan untuk sebuah keluarga +
-   * saring kolom yang tidak punya data pada records (mis. dozer kecil tanpa
-   * pitch angle tetap diekspor ke CSV-nya saja).
+   * Pilih daftar kolom tabel log yang relevan untuk sebuah keluarga.
+   *
+   * [HD785/PC2000 2026-10-12] KAIDAH PER KELUARGA + TAMPILKAN SEMUA DATA:
+   *   1) Keluarga menentukan KOLOM PRIORITAS (dipakai lebih dulu, di kiri):
+   *        DOZER     -> TABLE_COLUMNS_DOZER      (exhaust per bank, T/C, blade)
+   *        TRUCK     -> TABLE_COLUMNS_TRUCK      (retarder/brake, boost, exhaust grup)
+   *        EXCAVATOR -> TABLE_COLUMNS_EXCAVATOR  (4 pompa hidrolik, exhaust grup)
+   *        lainnya   -> TABLE_COLUMNS            (daftar umum)
+   *   2) Setelah kolom prioritas, SELURUH parameter lain yang BENAR-BENAR punya
+   *      data pada unit ini IKUT DITAMPILKAN (agar tidak ada data yang
+   *      tersembunyi). Kolom yang kosong/absen tetap dilewati.
+   *   `status` selalu dipindah ke kolom paling kanan.
+   *
+   * Tabel menjadi lebar sesuai isi; `.table-scroll` (CSS) menyediakan scroll
+   * horizontal bila melebihi lebar panel (lihat vhms-dashboard.css
+   * #table-section).
    * @param {string} familyId
    * @param {object[]} records
+   * @param {object} [thresholdSet] ambang EFEKTIF unit (`analysis.thresholdSet`).
+   *   Bila diberikan, penentuan `colored` memakai set ini — bukan gabungan
+   *   seluruh model (lihat `_paramHasThreshold`).
    * @returns {object[]}
    */
-  function tableColumnsFor(familyId, records) {
-    var base = (familyId === 'DOZER') ? TABLE_COLUMNS_DOZER : TABLE_COLUMNS;
+  var TABLE_COLUMNS_BY_FAMILY = {
+    DOZER:     TABLE_COLUMNS_DOZER,
+    TRUCK:     TABLE_COLUMNS_TRUCK,
+    EXCAVATOR: TABLE_COLUMNS_EXCAVATOR
+  };
+
+  // Parameter yang SELALU ditangani khusus (tidak ikut auto-append).
+  var TABLE_PARAM_EXCLUDE = { smr: true, calendar: true };
+
+  /**
+   * Apakah sebuah parameter punya ambang? Dipakai agar kolom auto-append ikut
+   * DIWARNAI bila layak, tanpa harus didaftarkan manual di tiap keluarga.
+   *
+   * [FIX AUDIT 2026-10-13] Dulu fungsi ini memindai SELURUH `MODEL_THRESHOLDS`
+   * (semua model), sehingga kolom bisa ditandai `colored:true` untuk unit yang
+   * threshold EFEKTIF-nya tidak punya ambang itu — lalu `evaluateParam()`
+   * mengembalikan `null` dan sel diwarnai seperti NORMAL. Kini bila
+   * `thresholdSet` unit diberikan, HANYA set itu yang dipakai (sumber
+   * kebenaran yang sama dengan badge status baris). Pemindaian semua model
+   * dipertahankan HANYA sebagai fallback saat pemanggil tidak tahu unitnya
+   * (mis. pengujian konfigurasi) — dan di jalur render, `renderTable()` tetap
+   * menolak mewarnai parameter tanpa ambang.
+   * @param {string} key
+   * @param {object} [thresholdSet] ambang efektif unit (profil + model)
+   */
+  function _paramHasThreshold(key, thresholdSet) {
+    if (thresholdSet) return !!thresholdSet[key];
+    if (THRESHOLDS[key]) return true;
+    var mk = Object.keys(MODEL_THRESHOLDS);
+    for (var i = 0; i < mk.length; i++) {
+      if (MODEL_THRESHOLDS[mk[i]] && MODEL_THRESHOLDS[mk[i]][key]) return true;
+    }
+    return false;
+  }
+
+  function tableColumnsFor(familyId, records, thresholdSet) {
+    var base = TABLE_COLUMNS_BY_FAMILY[familyId] || TABLE_COLUMNS;
     if (!records || !records.length) return base;
-    var sample = records.slice(0, Math.min(records.length, 20));
-    // Selalu pertahankan smr & status; saring kolom lain yang benar-benar kosong.
-    var filtered = base.filter(function (col) {
-      if (col.isStatus || col.param === 'smr') return true;
-      return _sampleHasData(sample, col.param);
+    /* [B-2 2026-10-13] DULU: `records.slice(0, 20)` — kolom ditentukan hanya
+     * dari 20 record PERTAMA. Bila 20 baris pertama kebetulan berasal dari
+     * satu jenis berkas saja (hal yang LAZIM karena record diurutkan menurut
+     * SMR), seluruh kolom milik berkas lain HILANG dari tabel DAN dari ekspor
+     * CSV — tanpa peringatan apa pun. Terukur pada HD785: menukar urutan
+     * record menjatuhkan jumlah kolom dari 51 menjadi 16 (35 kolom lenyap,
+     * termasuk seluruh kolom Clutch Fill Time).
+     *
+     * SEKARANG: pindai SELURUH record. Biayanya kecil dan dibatasi oleh
+     * hubung-singkat `_sampleHasData` (berhenti pada nilai pertama yang ada):
+     * kolom yang berisi langsung berhenti di baris pertama; hanya kolom yang
+     * benar-benar kosong yang menelusuri seluruh baris. Terukur pada dataset
+     * terbesar (324 record × 90 parameter): < 2 ms. */
+    var sample = records;
+
+    var out = [];
+    var seen = {};
+    // 1) Kolom prioritas keluarga — hanya yang punya data (kecuali smr/status).
+    base.forEach(function (col) {
+      if (col.isStatus) return;                       // status dipindah ke akhir
+      if (col.param === 'smr' || _sampleHasData(sample, col.param)) {
+        out.push(col);
+        seen[col.param] = true;
+      }
     });
-    // Minimal 4 kolom data; bila terlalu banyak terbuang, pakai daftar umum.
-    return filtered.length >= 4 ? filtered : base;
+    // 2) LENGKAPI dengan seluruh parameter PARAMS lain yang punya data,
+    //    mengikuti urutan definisi PARAMS (stabil & bermakna).
+    Object.keys(PARAMS).forEach(function (key) {
+      if (TABLE_PARAM_EXCLUDE[key] || seen[key]) return;
+      if (!_sampleHasData(sample, key)) return;
+      out.push({ param: key, align: 'center', colored: _paramHasThreshold(key, thresholdSet) });
+      seen[key] = true;
+    });
+    // 3) Selalu ada minimal satu kolom data; bila kosong, pakai daftar keluarga.
+    if (out.length < 2) return base;
+    // 4) Status SELALU paling kanan.
+    if (base.some(function (c) { return c.isStatus; })) {
+      out.push({ param: 'status', align: 'center', isStatus: true });
+    }
+    return out;
   }
 
   /* -----------------------------------------------------------------------
@@ -753,8 +1602,14 @@
    * --------------------------------------------------------------------- */
   function chartGroupsFor(records) {
     if (!records || !records.length) return CHART_GROUPS.slice();
-    // Cache kolom yang terisi: cukup periksa beberapa record pertama
-    var sample = records.slice(0, Math.min(records.length, 20));
+    /* [B-2 2026-10-13] DULU `records.slice(0, 20)` — BUG YANG SAMA dengan
+     * `tableColumnsFor`. Bila 20 record pertama berasal dari satu jenis berkas
+     * saja (lazim, karena record diurutkan menurut SMR dan satu unit dapat
+     * menerima Chassis Trend + T/M Trend), SELURUH grup chart milik berkas
+     * lain ikut HILANG — mis. grafik "T/M Clutch Fill Time & Thermal Duty"
+     * tidak pernah muncul meski datanya ada. Pindai seluruh record;
+     * `_sampleHasData` berhenti pada nilai pertama yang ada (< 2 ms terukur). */
+    var sample = records;
     return CHART_GROUPS.filter(function (g) {
       var n = 0;
       g.series.forEach(function (s) { if (_sampleHasData(sample, s.param)) n++; });
@@ -927,12 +1782,27 @@
       coolantTemp:  { warn: 97.0, crit: 105.0, mode: 'high' },
       // Hydraulic temp: excavator beban hidrolik sangat tinggi
       hydTempMax:   { warn: 90.0, crit: 100.0, mode: 'high' },
-      ptoTempMax:   { warn: 95.0, crit: 105.0, mode: 'high' }
+      ptoTempMax:   { warn: 95.0, crit: 105.0, mode: 'high' },
+      // [B14 2026-10-10 — OPSI A] Pin satuan B10 DIHAPUS.
+      // Sebelumnya keempat kunci `*ExhOver800` di-pin ke PERSEN di sini
+      // untuk menambal `cfg.THRESHOLDS` yang masih DETIK. Setelah B14,
+      // `cfg.THRESHOLDS` dan `TH_TRUCK` sama-sama PERSEN — pin ini tidak
+      // lagi menambal apa pun, hanya risiko drift. Nilai persen kini dari
+      // SATU sumber: TH_EXCAVATOR.
+      lfExhOver800: { warn: 1.0, crit: 8.0, mode: 'high', label: 'LF Exhaust >800\u00B0C (% waktu)' },
+      lrExhOver800: { warn: 1.0, crit: 8.0, mode: 'high', label: 'LR Exhaust >800\u00B0C (% waktu)' },
+      rfExhOver800: { warn: 1.0, crit: 8.0, mode: 'high', label: 'RF Exhaust >800\u00B0C (% waktu)' },
+      rrExhOver800: { warn: 1.0, crit: 8.0, mode: 'high', label: 'RR Exhaust >800\u00B0C (% waktu)' }
     },
 
     'PC2000-8': {
       fuelRate:     { warn: 170.0, crit: 200.0, mode: 'high' },
-      boostMax:     { warn: 1200.0, crit: 1420.0, mode: 'high' }
+      boostMax:     { warn: 1200.0, crit: 1420.0, mode: 'high' },
+      // [B14] Lihat catatan pada PC2000 — pin satuan dihapus.
+      lfExhOver800: { warn: 1.0, crit: 8.0, mode: 'high', label: 'LF Exhaust >800\u00B0C (% waktu)' },
+      lrExhOver800: { warn: 1.0, crit: 8.0, mode: 'high', label: 'LR Exhaust >800\u00B0C (% waktu)' },
+      rfExhOver800: { warn: 1.0, crit: 8.0, mode: 'high', label: 'RF Exhaust >800\u00B0C (% waktu)' },
+      rrExhOver800: { warn: 1.0, crit: 8.0, mode: 'high', label: 'RR Exhaust >800\u00B0C (% waktu)' }
     },
 
     'PC1250': {
@@ -940,12 +1810,22 @@
       blowbyMax:    { warn: 4.5,  crit: 10.0, mode: 'high' },
       fuelRate:     { warn: 115.0, crit: 140.0, mode: 'high' },
       coolantTemp:  { warn: 96.0, crit: 104.0, mode: 'high' },
-      hydTempMax:   { warn: 90.0, crit: 100.0, mode: 'high' }
+      hydTempMax:   { warn: 90.0, crit: 100.0, mode: 'high' },
+      // [B14] Lihat catatan pada PC2000 — pin satuan dihapus.
+      lfExhOver800: { warn: 1.0, crit: 8.0, mode: 'high', label: 'LF Exhaust >800\u00B0C (% waktu)' },
+      lrExhOver800: { warn: 1.0, crit: 8.0, mode: 'high', label: 'LR Exhaust >800\u00B0C (% waktu)' },
+      rfExhOver800: { warn: 1.0, crit: 8.0, mode: 'high', label: 'RF Exhaust >800\u00B0C (% waktu)' },
+      rrExhOver800: { warn: 1.0, crit: 8.0, mode: 'high', label: 'RR Exhaust >800\u00B0C (% waktu)' }
     },
 
     'PC1250-8': {
       fuelRate:     { warn: 120.0, crit: 145.0, mode: 'high' },
-      boostMax:     { warn: 1150.0, crit: 1380.0, mode: 'high' }
+      boostMax:     { warn: 1150.0, crit: 1380.0, mode: 'high' },
+      // [B14] Lihat catatan pada PC2000 — pin satuan dihapus.
+      lfExhOver800: { warn: 1.0, crit: 8.0, mode: 'high', label: 'LF Exhaust >800\u00B0C (% waktu)' },
+      lrExhOver800: { warn: 1.0, crit: 8.0, mode: 'high', label: 'LR Exhaust >800\u00B0C (% waktu)' },
+      rfExhOver800: { warn: 1.0, crit: 8.0, mode: 'high', label: 'RF Exhaust >800\u00B0C (% waktu)' },
+      rrExhOver800: { warn: 1.0, crit: 8.0, mode: 'high', label: 'RR Exhaust >800\u00B0C (% waktu)' }
     },
 
     'PC3000': {
@@ -1364,6 +2244,9 @@
     normalizeUnit: normalizeUnit,
     TABLE_COLUMNS: TABLE_COLUMNS,
     TABLE_COLUMNS_DOZER: TABLE_COLUMNS_DOZER,
+    TABLE_COLUMNS_TRUCK: TABLE_COLUMNS_TRUCK,
+    TABLE_COLUMNS_EXCAVATOR: TABLE_COLUMNS_EXCAVATOR,
+    TABLE_COLUMNS_BY_FAMILY: TABLE_COLUMNS_BY_FAMILY,
     tableColumnsFor: tableColumnsFor,
     NULL_SENTINELS: NULL_SENTINELS,
     RANKING_WEIGHTS: RANKING_WEIGHTS,
@@ -1371,6 +2254,14 @@
     RANKING_AXES: RANKING_AXES,
     RANKING_BANDS: RANKING_BANDS,
     RANKING_PILLAR_WEIGHTS: RANKING_PILLAR_WEIGHTS,
+    // [T2 2026-10-08] Gerbang kualitas data dari riwayat fault.
+    FAULT_SENSOR_MAP: FAULT_SENSOR_MAP,
+    FAULT_MASK_RULES: FAULT_MASK_RULES,
+    // [PC2000 2026-10-10 — T6/D10] Alarm turunan dari sensor rusak.
+    FAULT_DERIVED_FROM: FAULT_DERIVED_FROM,
+    ALL_PARAMS_SENTINEL: ALL_PARAMS_SENTINEL,
+    faultSensorLookup: faultSensorLookup,
+    faultMaskableParams: faultMaskableParams,
     FORMULA_WINDOW_HOURS: FORMULA_WINDOW_HOURS,
     RANKING_WINDOW_HOURS: RANKING_WINDOW_HOURS,
     CHART_WINDOW_HOURS: CHART_WINDOW_HOURS,

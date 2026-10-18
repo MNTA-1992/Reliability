@@ -638,6 +638,11 @@
     if (!wrap) { return; }
     var d = document.createElement('div');
     d.className = 'toast ' + (type || 'ok');
+    // [O-4 2026-10-12] Jalur fallback ini SATU-SATUNYA toast yang masih
+    // kehilangan peran ARIA. `#toast-wrap` hanya `aria-live="polite"`, jadi
+    // pesan GAGAL ikut mengantre di belakang pesan lain dan bisa terlewat.
+    // Error wajib assertive (`role=alert`); sisanya cukup `status`.
+    d.setAttribute('role', type === 'err' ? 'alert' : 'status');
     d.textContent = msg;
     wrap.appendChild(d);
     setTimeout(function () { d.remove(); }, 4000);

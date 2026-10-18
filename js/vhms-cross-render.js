@@ -38,7 +38,9 @@
     timelinePair: 0,
     timelineSosParams: null,   // array key param SOS yang ditampilkan di timeline
     scatterPair: 0,
-    timeBase: 'auto'        // [FITUR] 'auto' = auto-fallback (HM<->Tanggal); bisa 'hm'/'date'
+    timeBase: 'auto',       // [FITUR] 'auto' = auto-fallback (HM<->Tanggal); bisa 'hm'/'date'
+    // [FITUR 2026-10-11] Urutan tabel "Korelasi & Hipotesis" (klik header).
+    pairsSortKey: 'strength', pairsSortDir: 'desc'
   };
 
   /* ------------------------------ util ---------------------------------- */
@@ -362,7 +364,12 @@
       cellMap[p.vhms + '|' + p.sos] = p;
     });
 
-    head.innerHTML = '<tr><th scope="row" class="heat-label">VHMS ? / SOS ?</th>' +
+    // [O-4 2026-10-12] Sel sudut matriks tidak menjadi header bagi baris mana
+    // pun maupun kolom mana pun, jadi `scope` DIHAPUS (sebelumnya `scope="row"`
+    // — keliru, karena sel ini berada di `thead`). Label lama "VHMS ? / SOS ?"
+    // memakai tanda tanya yang tak bermakna; diganti keterangan sumbu eksplisit
+    // agar pembaca layar menyebut orientasi matriks dengan benar.
+    head.innerHTML = '<tr><td class="heat-label">VHMS (baris) / SOS (kolom)</td>' +
       sosCols.map(function (s) {
         var lbl = (scfg.PARAMS[s] || {}).label || s;
         return '<th scope="col" class="center">' + esc(lbl) + '</th>';
@@ -407,8 +414,13 @@
         // Tag arah (HIGH/LOW) kecil di samping label baris.
         var dirTag = '<span style="font-size:11px;font-weight:700;color:' + dirColor + ';border:1px solid ' + dirColor +
           '55;border-radius:4px;padding:0 4px;margin-left:6px">' + grp.dir + '</span>';
-        return '<tr><td class="heat-label" style="font-size:11px">' + esc(vLbl) +
-          (vUnit ? ' <span class="u-text-mute">(' + esc(vUnit) + ')</span>' : '') + dirTag + '</td>' + cells + '</tr>';
+        // [O-4 2026-10-12] Label baris adalah HEADER bagi sel korelasi di
+        // kanannya → `<th scope="row">`, bukan `<td>`. Tanpa ini pembaca layar
+        // menyebut angka r tanpa menyebut parameter VHMS-nya. `font-weight`
+        // dinormalkan agar tampilan tetap sama seperti saat masih `<td>`.
+        return '<tr><th scope="row" class="heat-label" style="font-size:11px;font-weight:400;' +
+          'text-transform:none;letter-spacing:0">' + esc(vLbl) +
+          (vUnit ? ' <span class="u-text-mute">(' + esc(vUnit) + ')</span>' : '') + dirTag + '</th>' + cells + '</tr>';
       }).join('');
     });
     body.innerHTML = rowsHtml;
@@ -677,14 +689,54 @@
   }
 
   /* -------- Tabel pairs -------- */
+  /** [FITUR 2026-10-11] Ikon indikator urutan header tabel pasangan. */
+  function pairsSortIcon(key) {
+    if (state.pairsSortKey !== key) return ' <i class="th-sort-ico fa-solid fa-sort"></i>';
+    return state.pairsSortDir === 'asc'
+      ? ' <i class="th-sort-ico is-active fa-solid fa-sort-up"></i>'
+      : ' <i class="th-sort-ico is-active fa-solid fa-sort-down"></i>';
+  }
+  /** [FITUR 2026-10-11] Terapkan ikon + aria-sort ke header tabel pasangan. */
+  function applyPairsSortIndicators() {
+    document.querySelectorAll('#cross-pairs-table th[data-pairs-sort]').forEach(function (th) {
+      var k = th.getAttribute('data-pairs-sort');
+      var base = th.getAttribute('data-label') || th.textContent.replace(/\s*$/, '');
+      th.setAttribute('data-label', base);
+      th.innerHTML = _escLocal(base.trim()) + pairsSortIcon(k);
+      th.style.cursor = 'pointer';
+      th.setAttribute('role', 'button');
+      th.setAttribute('tabindex', '0');
+      th.setAttribute('aria-sort',
+        state.pairsSortKey === k ? (state.pairsSortDir === 'asc' ? 'ascending' : 'descending') : 'none');
+    });
+  }
   function renderPairsTable(res) {
     var body = document.getElementById('cross-pairs-body');
     if (!body) return;
+    state.currentPairs = (res && res.pairs) ? res.pairs : [];
+    applyPairsSortIndicators();
     if (!res.pairs.length) {
       body.innerHTML = '<tr><td colspan="7" style="text-align:center;padding:24px;color:var(--text-mute)">Tidak ada pasangan parameter dengan data cukup untuk dihitung.</td></tr>';
       return;
     }
-    body.innerHTML = res.pairs.map(function (p) {
+    // Urutkan sesuai state (default: kekuatan korelasi |r| terbesar di atas).
+    var k = state.pairsSortKey || 'strength', dir = state.pairsSortDir === 'asc' ? 1 : -1;
+    var sorted = res.pairs.slice().sort(function (a, b) {
+      var va, vb;
+      if (k === 'strength' || k === 'r') {
+        va = (a.r === null || a.r === undefined) ? -1 : Math.abs(a.r);
+        vb = (b.r === null || b.r === undefined) ? -1 : Math.abs(b.r);
+      } else if (k === 'n') {
+        va = a.n || 0; vb = b.n || 0;
+      } else if (k === 'vhmsLabel' || k === 'sosLabel' || k === 'basis' || k === 'hypothesis') {
+        va = String(a[k] || '').toLowerCase(); vb = String(b[k] || '').toLowerCase();
+      } else {
+        va = 0; vb = 0;
+      }
+      if (typeof va === 'number' && typeof vb === 'number') return (va - vb) * dir;
+      return String(va).localeCompare(String(vb)) * dir;
+    });
+    body.innerHTML = sorted.map(function (p) {
       var r = p.r;
       var color = r === null ? '#94a3b8' : (Math.abs(r) >= 0.7 ? (r > 0 ? '#22c55e' : '#ef4444') : '#eab308');
       // [REVISI #15] Tag arah degradasi parameter VHMS (HIGH/LOW).
@@ -708,6 +760,21 @@
         '<td class="wrap-text" style="font-size:11px;color:#cbd5e1">' + esc(p.hypothesis) + '</td>' +
         '</tr>';
     }).join('');
+  }
+
+  /**
+   * [FITUR 2026-10-11] Urutkan tabel "Korelasi & Hipotesis" berdasar klik
+   * header. Klik kolom sama membalik arah; kolom baru dimulai desc.
+   */
+  function setPairsSort(key) {
+    if (!key) return;
+    if (state.pairsSortKey === key) {
+      state.pairsSortDir = (state.pairsSortDir === 'asc') ? 'desc' : 'asc';
+    } else {
+      state.pairsSortKey = key;
+      state.pairsSortDir = 'desc';
+    }
+    if (state.currentPairs) renderPairsTable({ pairs: state.currentPairs });
   }
 
   /* -------- Selectors -------- */
@@ -1526,6 +1593,14 @@
         renderFleet();
       });
     });
+    // [FITUR 2026-10-11] Sort tabel "Korelasi & Hipotesis" (klik header).
+    document.querySelectorAll('#cross-pairs-table th[data-pairs-sort]').forEach(function (th) {
+      th.style.cursor = 'pointer';
+      th.addEventListener('click', function () { setPairsSort(th.getAttribute('data-pairs-sort')); });
+      th.addEventListener('keydown', function (e) {
+        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setPairsSort(th.getAttribute('data-pairs-sort')); }
+      });
+    });
     var tl = document.getElementById('cross-timeline-pair');
     if (tl) tl.addEventListener('change', onTimelinePairChange);
     var sc = document.getElementById('cross-scatter-pair');
@@ -1570,6 +1645,8 @@
     openDetail: openDetail,
     backToFleet: backToFleet,
     exitCross: exitCross,
-    destroyCharts: destroyCharts
+    destroyCharts: destroyCharts,
+    setPairsSort: setPairsSort,
+    getPairsState: function () { return { pairsSortKey: state.pairsSortKey, pairsSortDir: state.pairsSortDir }; }
   };
 })(typeof window !== 'undefined' ? window : globalThis);

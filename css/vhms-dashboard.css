@@ -185,7 +185,8 @@ body[data-theme="porcelain"] .cross-modal-stat .cms-v,
 body[data-theme="porcelain"] .corr-param,
 body[data-theme="porcelain"] .tl-label,
 body[data-theme="porcelain"] table.param-matrix thead th.unit-col .u-serial,
-body[data-theme="porcelain"] table.param-matrix td.param-name .p-label { color: #14161c; }
+body[data-theme="porcelain"] table.param-matrix td.param-name .p-label,
+body[data-theme="porcelain"] table.param-matrix th.param-name .p-label { color: #14161c; }
 body[data-theme="porcelain"] .anomaly-body strong,
 body[data-theme="porcelain"] .unit-bar-serial,
 body[data-theme="porcelain"] .top-unit,
@@ -209,7 +210,8 @@ body[data-theme="light"] .cross-modal-stat .cms-v,
 body[data-theme="light"] .corr-param,
 body[data-theme="light"] .tl-label,
 body[data-theme="light"] table.param-matrix thead th.unit-col .u-serial,
-body[data-theme="light"] table.param-matrix td.param-name .p-label { color: #0f172a; }
+body[data-theme="light"] table.param-matrix td.param-name .p-label,
+body[data-theme="light"] table.param-matrix th.param-name .p-label { color: #0f172a; }
 body[data-theme="light"] .anomaly-body strong,
 body[data-theme="light"] .unit-bar-serial,
 body[data-theme="light"] .top-unit,
@@ -463,9 +465,18 @@ table.param-matrix thead th.unit-col .u-serial { display: block; color: #e2e8f0;
 table.param-matrix thead th.unit-col .u-serial.u-lambung { color: #34d399; }
 table.param-matrix thead th.unit-col .u-model { display: block; color: #64748b; font-weight: 500; font-size: 10px; letter-spacing: .4px; }
 table.param-matrix tbody td { font-family: 'JetBrains Mono', monospace; }
-table.param-matrix td.param-name { font-family: inherit; white-space: normal; min-width: 180px; }
-table.param-matrix td.param-name .p-label { color: #e2e8f0; font-weight: 600; font-size: 11.5px; }
-table.param-matrix td.param-name .p-meta { color: #64748b; font-size: 10px; display: block; margin-top: 2px; }
+/* [O-4 2026-10-12] Sel nama parameter kini `<th scope="row">`; selektor
+   diperluas ke `th` dan gaya bawaan `th` dinetralkan agar identik dgn `td`. */
+table.param-matrix td.param-name,
+table.param-matrix th.param-name { font-family: inherit; white-space: normal; min-width: 180px; }
+table.param-matrix th.param-name {
+  text-transform: none; letter-spacing: 0; font-weight: 400; text-align: left;
+  padding: 9px 10px; border-bottom: 1px solid rgba(30, 41, 59, .7);
+}
+table.param-matrix td.param-name .p-label,
+table.param-matrix th.param-name .p-label { color: #e2e8f0; font-weight: 600; font-size: 11.5px; }
+table.param-matrix td.param-name .p-meta,
+table.param-matrix th.param-name .p-meta { color: #64748b; font-size: 10px; display: block; margin-top: 2px; }
 table.param-matrix td.val-cell { text-align: center; font-weight: 700; }
 table.param-matrix td.val-cell.v-CRITICAL { color: #f87171; background: rgba(239,68,68,.10); }
 table.param-matrix td.val-cell.v-CAUTION,
@@ -802,6 +813,12 @@ html, body { max-width: 100%; overflow-x: hidden; }
     min-width: 40px;
     padding: 10px 12px;
   }
+  /* Filter kolom inline (mis. Keterangan fault) tetap ringkas di perangkat
+     sentuh — menaikkan tinggi 40px akan merusak tata letak header tabel. */
+  .fault-col-filter .fault-filter-input { min-height: 0; min-width: 0; padding: 0; }
+  /* Input & tombol kalender filter Oper. Availability juga dijaga ringkas. */
+  .opava-date .opava-date-input { min-height: 0; min-width: 0; padding: 6px 4px 6px 10px; }
+  .opava-date .opava-date-btn { min-height: 30px; min-width: 30px; padding: 0; }
 }
 /* [REVISI #1-lanjutan] Header kolom boleh MEMBUNGKUS agar tabel mengisi
    lebar panel (rata kanan-kiri) tanpa overflow horizontal; sebelumnya
@@ -838,20 +855,63 @@ table.data thead th.right  { text-align: right; }
 #fleet-area .badge { padding: 1px 6px; font-size: 10px; }
 #fleet-area .btn-sm { padding: 3px 8px; font-size: 10px; }
 
-/* [2026-10-05] Historical Telemetry Data Log: muat penuh tanpa scroll kanan.
-   `min-width: max-content` (aturan umum .table-scroll) dimatikan supaya tabel
-   menyusut mengikuti lebar panel; satuan kolom turun ke baris ke-2. */
-#table-section .table-scroll > table.data { min-width: 0; width: 100%; table-layout: fixed; }
+/* [2026-10-05 → REVISI 2026-10-12] Historical Telemetry Data Log.
+   ---------------------------------------------------------------------
+   SEBELUM: tabel dipaksa `width:100%; table-layout:fixed` + sel
+   `overflow:hidden; text-overflow:ellipsis` supaya muat tanpa scroll kanan.
+   Setelah kolom PER KELUARGA PRODUK ditambahkan (D375A/HD785/PC2000 punya
+   kolom khas + badge SENSOR FAULT), pemampatan itu MEMOTONG isi (mis.
+   "SENSOR FAULT" -> "SENSOR FAUL…", angka terpotong).
+
+   SEKARANG: KAIDAH UTUH-DULU. Kolom selebar isi (`min-width:max-content`)
+   sehingga SEMUA data tampil penuh; bila melebihi lebar panel, `.table-scroll`
+   memberi SCROLL HORISONTAL (dengan scrollbar yang terlihat). Tidak ada lagi
+   ellipsis pada sel data. */
+#table-section .table-scroll > table.data { min-width: max-content; width: auto; table-layout: auto; }
 #table-section table.data { font-size: 10.5px; }
 #table-section table.data thead th {
-  padding: 6px 4px; font-size: 9.5px; letter-spacing: 0; word-break: break-word;
+  padding: 6px 8px; font-size: 9.5px; letter-spacing: 0; word-break: normal;
+  white-space: nowrap;          /* judul kolom satu baris agar lebar konsisten */
 }
 #table-section table.data thead th span { display: block; opacity: .55; }
-#table-section table.data tbody td { padding: 4px 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-#table-section table.data .badge { padding: 1px 5px; font-size: 9.5px; }
-/* Kolom 1 (Waktu Rekam) butuh ruang tetap; sisanya dibagi rata oleh fixed layout. */
-#table-section table.data thead th:first-child { width: 112px; }
-#table-section table.data thead th:last-child  { width: 64px; }
+/* Sel data TIDAK dipotong: biarkan selebar isinya. */
+#table-section table.data tbody td { padding: 4px 8px; white-space: nowrap; }
+#table-section table.data .badge { padding: 1px 5px; font-size: 9.5px; white-space: nowrap; }
+#table-section table.data .sensor-fault-tag { white-space: nowrap; }
+/* Kolom 1 (Waktu Rekam) & terakhir (Status) dijaga punya lebar minimum wajar;
+   sisanya mengikuti isi. `min-width` (bukan `width` tetap) agar tidak
+   memampatkan kolom data lainnya. */
+#table-section table.data thead th:first-child { min-width: 128px; }
+#table-section table.data thead th:last-child  { min-width: 76px; }
+/* Scrollbar horizontal & vertikal yang LEMBUT pada tabel log telemetri.
+   Sebelumnya memakai track hampir-hitam + thumb tebal sehingga kontras
+   dengan latar panel; kini track transparan & thumb slate semi-transparan
+   yang menyatu (soft), tetap terlihat saat hover. */
+#table-section .table-scroll { overflow: auto; scrollbar-width: thin; scrollbar-color: rgba(100,116,139,.45) transparent; }
+#table-section .table-scroll::-webkit-scrollbar { width: 9px; height: 9px; }
+#table-section .table-scroll::-webkit-scrollbar-track { background: transparent; }
+#table-section .table-scroll::-webkit-scrollbar-thumb {
+  background: rgba(100,116,139,.40); border-radius: 8px;
+  border: 2px solid transparent; background-clip: content-box;
+}
+#table-section .table-scroll::-webkit-scrollbar-thumb:hover { background: rgba(148,163,184,.65); background-clip: content-box; }
+#table-section .table-scroll::-webkit-scrollbar-corner { background: transparent; }
+
+/* [FITUR 2026-10-12] Header tabel yang DAPAT DIURUTKAN (sortir).
+   Judul kolom ber-`data-sort` menampilkan kursor pointer, sorotan hover,
+   panah indikator arah, dan cincin fokus keyboard. */
+#table-section table.data thead th.sortable { cursor: pointer; user-select: none; }
+#table-section table.data thead th.sortable:hover { color: #cbd5e1; background: rgba(30,41,59,.55); }
+#table-section table.data thead th.sortable:focus-visible {
+  outline: 2px solid #0ea5e9; outline-offset: -2px;
+}
+/* PENTING: aturan `thead th span { display:block }` di atas (dipakai untuk
+   menurunkan SATUAN ke baris ke-2) juga menangkap `.sort-ind`, sehingga panah
+   arah urut turun ke baris sendiri & header jadi 3 baris. Kembalikan ke inline. */
+#table-section table.data thead th .sort-ind {
+  display: inline; font-size: 8.5px; opacity: .45; margin-left: 2px; vertical-align: middle;
+}
+#table-section table.data thead th .sort-ind.active { opacity: 1; color: #38bdf8; }
 
 /* ---------- Tabel "Ringkasan & Kesimpulan": filter kolom (gaya Excel) ---------- */
 /* Baris ke-2 thead menampung <input> filter per kolom. Header dua baris:
@@ -912,6 +972,94 @@ table.data tbody tr.row-WARNING  { background: rgba(69,26,3,.22);  box-shadow: i
 .dropzone .dz-icon { font-size: 40px; color: var(--sky); margin-bottom: 12px; opacity: .85; }
 .dropzone h3 { font-size: 15px; margin-bottom: 6px; }
 .dropzone p { font-size: 12px; color: var(--text-mute); margin-bottom: 16px; }
+
+/* -------------------------------------------------------------------------
+ * [2026-10-09] PANDUAN UNGGAH PER MODEL (di dalam dropzone).
+ * Menjelaskan: model apa -> file apa -> nama file apa -> wajib/opsional.
+ * Ditulis sebagai tabel karena pengguna perlu MEMINDAI cepat, bukan membaca
+ * paragraf. Dipakai var() warna tema agar mode terang/porcelain tetap benar.
+ * ------------------------------------------------------------------------- */
+.upload-guide {
+  margin-top: 22px; padding: 16px 18px; border-radius: 12px; text-align: left;
+  background: rgba(15,23,42,.55); border: 1px solid var(--border);
+}
+body[data-theme="light"] .upload-guide,
+body[data-theme="porcelain"] .upload-guide { background: rgba(248,250,252,.75); }
+
+.upload-guide-head {
+  display: flex; align-items: center; gap: 8px;
+  font-size: 13px; font-weight: 700; color: var(--sky); margin-bottom: 10px;
+}
+.upload-guide-note {
+  font-size: 11.5px; color: var(--text-mute); line-height: 1.6; margin: 0 0 14px;
+}
+.upload-guide-note code, .upload-guide-rules code {
+  font-family: 'JetBrains Mono', monospace; font-size: 10.5px;
+  padding: 1px 5px; border-radius: 4px;
+  background: rgba(148,163,184,.16); color: var(--text);
+}
+
+.upload-guide-table {
+  width: 100%; border-collapse: collapse; font-size: 11.5px; margin-bottom: 14px;
+  table-layout: fixed;
+}
+/* [FIX 2026-10-09] Lebar kolom dikunci agar "Nama File" (informasi terpenting)
+   tidak terhimpit oleh kolom "Fungsi" yang panjang. Tanpa table-layout:fixed
+   + colgroup, browser memberi 52% lebar ke kolom deskripsi. */
+.upload-guide-table col.ug-c-model { width: 9%; }
+.upload-guide-table col.ug-c-jenis { width: 12%; }
+.upload-guide-table col.ug-c-file  { width: 24%; }
+.upload-guide-table col.ug-c-wajib { width: 11%; }
+.upload-guide-table col.ug-c-fungsi{ width: 44%; }
+.upload-guide-table th {
+  text-align: left; font-size: 10px; text-transform: uppercase; letter-spacing: .4px;
+  color: var(--text-mute); font-weight: 700; padding: 6px 8px;
+  border-bottom: 1px solid var(--border);
+}
+.upload-guide-table td {
+  padding: 7px 8px; border-bottom: 1px solid rgba(148,163,184,.12);
+  color: var(--text); vertical-align: top; line-height: 1.5;
+  overflow-wrap: anywhere; word-break: break-word;
+}
+.upload-guide-table td code {
+  font-family: 'JetBrains Mono', monospace; font-size: 10.5px;
+  padding: 1px 5px; border-radius: 4px;
+  background: rgba(56,189,248,.12); color: #7dd3fc;
+}
+body[data-theme="light"] .upload-guide-table td code,
+body[data-theme="porcelain"] .upload-guide-table td code { color: #0369a1; }
+.upload-guide-table .ug-group td {
+  font-weight: 700; color: var(--sky); font-size: 12px; padding-top: 14px;
+  border-bottom: 1px solid rgba(56,189,248,.28); background: transparent;
+}
+.upload-guide-table .ug-model { font-weight: 700; white-space: nowrap; }
+.upload-guide-table .ug-req,
+.upload-guide-table .ug-opt {
+  display: inline-block; padding: 1px 7px; border-radius: 20px;
+  font-size: 9.5px; font-weight: 700; white-space: nowrap;
+}
+.upload-guide-table .ug-req { background: rgba(34,197,94,.18); color: #4ade80; border: 1px solid rgba(34,197,94,.4); }
+.upload-guide-table .ug-opt { background: rgba(148,163,184,.14); color: var(--text-mute); border: 1px solid var(--border); }
+body[data-theme="light"] .upload-guide-table .ug-req,
+body[data-theme="porcelain"] .upload-guide-table .ug-req { color: #15803d; }
+body[data-theme="light"] .upload-guide-table .ug-opt,
+body[data-theme="porcelain"] .upload-guide-table .ug-opt { color: #475569; }
+
+.upload-guide-rules { list-style: none; margin: 0; padding: 0; }
+.upload-guide-rules li {
+  display: flex; gap: 8px; font-size: 11px; color: var(--text-mute);
+  line-height: 1.6; margin-bottom: 8px;
+}
+.upload-guide-rules li:last-child { margin-bottom: 0; }
+.upload-guide-rules li i { color: var(--sky); margin-top: 2px; flex-shrink: 0; }
+.upload-guide-rules strong { color: var(--text); }
+
+/* Di layar sempit: jadikan tabel dapat di-scroll horizontal, bukan terpotong. */
+@media (max-width: 720px) {
+  .upload-guide { padding: 14px 12px; }
+  .upload-guide-table { display: block; overflow-x: auto; white-space: nowrap; }
+  .upload-guide-table td { white-space: normal; min-width: 110px; }
+}
 
 /* ---------- Empty state ---------- */
 .empty-state { text-align: center; padding: 60px 20px; color: var(--text-mute); }
@@ -1307,16 +1455,32 @@ table.data.heatmap-table thead th {
   color: var(--text, #f1f5f9);
   box-shadow: 0 2px 0 var(--accent, #22d3ee);
 }
-table.data.heatmap-table thead th.th-label {
+table.data.heatmap-table thead th.th-label,
+table.data.heatmap-table thead td.th-label {
   left: 0; z-index: 7;
   vertical-align: middle;   /* sejajar tengah dgn header parameter */
   background: linear-gradient(180deg, var(--card-2, #1e293b), var(--card, #0f172a));
 }
-/* Kolom label baris (Kompartemen/Unit) sticky ke kiri. */
-table.data.heatmap-table tbody td.hm-label {
+/* Kolom label baris (Kompartemen/Unit) sticky ke kiri.
+   [O-4 2026-10-12] Sel label baris kini `<th scope="row">` (sebelumnya `<td>`)
+   agar pembaca layar menyebut nama unit/kompartemen saat membaca sel
+   parameter. Selektor diperluas ke `th` DAN gaya bawaan `th` dinetralkan
+   (`font-weight`/`text-transform`/`letter-spacing`) supaya tampilannya tetap
+   sama persis seperti saat masih `<td>`. */
+table.data.heatmap-table tbody td.hm-label,
+table.data.heatmap-table tbody th.hm-label {
   position: sticky; left: 0; z-index: 3;
   background: var(--card, #0f172a);
   max-width: 300px;
+}
+table.data.heatmap-table tbody th.hm-label {
+  font-weight: 400;
+  text-transform: none;
+  letter-spacing: 0;
+  text-align: left;
+  white-space: nowrap;
+  padding: 9px 10px;
+  border-bottom: 1px solid rgba(30, 41, 59, .7);
 }
 /* Kolom kanan (RUL/MPRS) sticky kanan. */
 table.data.heatmap-table thead th.hm-right-col {
@@ -1440,12 +1604,14 @@ table.data.heatmap-table tbody td.hm-right-col {
 }
 /* Selang-seling baris (zebra) lembut dgn sedikit gemerlap. */
 .heatmap-table tbody tr:nth-child(even) td { background: rgba(148,163,184,.045); }
-.heatmap-table tbody tr:nth-child(even) td.hm-label { background: var(--card-2, #1e293b); }
+.heatmap-table tbody tr:nth-child(even) td.hm-label,
+.heatmap-table tbody tr:nth-child(even) th.hm-label { background: var(--card-2, #1e293b); }
 .heatmap-table tbody tr:hover td {
   background: var(--hover-row, rgba(14,165,233,.08)) !important;
   box-shadow: inset 0 0 0 1px var(--accent-soft, rgba(34,211,238,.2));
 }
-.heatmap-table tbody tr:hover td.hm-label { background: var(--card-2, #1e293b) !important; }
+.heatmap-table tbody tr:hover td.hm-label,
+.heatmap-table tbody tr:hover th.hm-label { background: var(--card-2, #1e293b) !important; }
 /* Label baris. */
 .hm-label {
   font-size: 11px; font-weight: 700; white-space: nowrap; text-align: left;
@@ -1641,6 +1807,15 @@ table.data.heatmap-table tbody td.hm-right-col {
   body:not(.printing-portfolio) .data th:not(.th-param):not(.th-label):not(.hm-label) {
     font-size: 11px !important;
   }
+  /* [O-4 2026-10-12] `.hm-label` & `.param-name` DULU berupa `<td>` sehingga
+     ikut aturan `.data td` di atas (11px). Setelah diubah menjadi
+     `<th scope="row">` untuk aksesibilitas, keduanya tertangkap pengecualian
+     `:not(.hm-label)` dan menyusut ke 10.5px — regresi 0,5px yang terukur di
+     browser. Aturan ini memulihkan ukuran aslinya. */
+  body:not(.printing-portfolio) .data th.hm-label,
+  body:not(.printing-portfolio) .data th.param-name {
+    font-size: 11px !important;
+  }
   /* [2026-10-05 QA] Sisa elemen UI <11px yang belum tercakup di atas:
      tombol kecil & badge di katalog Home (`#fleet-area ... {10px}`),
      badge log telemetri (`#table-section ... {9.5px}`), dan 5 paragraf
@@ -1732,6 +1907,20 @@ table.data.heatmap-table tbody td.hm-right-col {
 /* ---------- Cross Analysis (VHMS x SOS) ---------- */
 #cross-area .panel-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 14px; flex-wrap: wrap; }
 .heat-label { text-align: left; font-size: 10.5px; color: #cbd5e1; padding: 6px 8px; white-space: nowrap; }
+/* [O-4 2026-10-12] Label baris heatmap Cross kini `<th scope="row">`. Diukur di
+   browser, `th` TIDAK mewarisi `table.data tbody td` sehingga muncul dua
+   regresi: padding 9px 10px -> 9px 4px dan warna #cbd5e1 -> #a9b6c7 (redup,
+   berisiko menurunkan kontras). Aturan ini menyamakannya kembali dengan `td`. */
+table.data tbody th.heat-label {
+  padding: 9px 10px;
+  color: #cbd5e1;
+  font-weight: 400;
+  text-align: left;
+  text-transform: none;
+  letter-spacing: 0;
+  white-space: nowrap;
+  border-bottom: 1px solid rgba(30, 41, 59, .7);
+}
 #cross-heatmap-table td { border: 1px solid rgba(30,41,59,.6); }
 #cross-heatmap-table td:hover { outline: 1px solid #22d3ee; }
 @media (max-width: 900px) {
@@ -1769,3 +1958,434 @@ table.data.heatmap-table tbody td.hm-right-col {
 .tl-connector::before { content: ''; width: 30px; height: 2px; background: #334155; display: inline-block; }
 .tl-dur { font-size: 11px; color: #94a3b8; margin-left: 4px; white-space: nowrap; }
 
+/* ---------- [T2.5 / T4.5] Fault History & Gerbang Kualitas Data ---------- */
+/* Penanda SENSOR FAULT pada sel tabel: nilai TETAP TAMPIL (aturan dua sumber
+   data README §6.3) tetapi diberi gaya muted agar jelas tidak ikut diskor. */
+.cell-masked { opacity: .55; font-style: italic; }
+.sensor-fault-tag {
+  display: inline-block; margin-left: 4px; padding: 1px 4px; border-radius: 3px;
+  font-size: 8.5px; font-weight: 700; letter-spacing: .3px; font-style: normal;
+  background: rgba(249,115,22,.18); color: #fb923c; border: 1px solid rgba(249,115,22,.4);
+  vertical-align: middle; white-space: nowrap;
+}
+.fault-gate {
+  margin: 10px 0; padding: 10px 12px; border-radius: 8px;
+  background: rgba(249,115,22,.08); border: 1px solid rgba(249,115,22,.28);
+}
+.fault-gate--unfit { background: rgba(239,68,68,.10); border-color: rgba(239,68,68,.45); }
+.fault-gate-title { font-size: 12px; font-weight: 700; color: #fb923c; display: flex; align-items: center; gap: 6px; }
+.fault-gate--unfit .fault-gate-title { color: #f87171; }
+.fault-gate-note { font-size: 11px; color: #cbd5e1; margin: 6px 0 0; line-height: 1.5; }
+.fault-gate-list { margin: 6px 0 0; padding-left: 18px; }
+.fault-gate-list li { font-size: 10.5px; color: #94a3b8; margin-bottom: 3px; line-height: 1.45; }
+.fault-kpi { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+.fault-kpi-box {
+  flex: 1 1 90px; min-width: 90px; padding: 8px 10px; border-radius: 8px;
+  background: rgba(30,41,59,.5); border: 1px solid #1e293b;
+  display: flex; flex-direction: column; gap: 2px;
+}
+.fault-kpi-label { font-size: 9.5px; text-transform: uppercase; letter-spacing: .4px; color: #94a3b8; }
+.fault-kpi-value { font-size: 16px; font-weight: 700; color: #e2e8f0; font-family: 'JetBrains Mono', monospace; }
+.fault-kpi-sub { font-size: 9px; color: #64748b; }
+.fault-top { font-size: 11.5px; color: #cbd5e1; margin: 10px 0 0; }
+.fault-notice {
+  font-size: 10.5px; color: #94a3b8; margin: 8px 0 0; line-height: 1.5;
+  padding: 7px 10px; border-radius: 6px; background: rgba(56,189,248,.07);
+  border-left: 2px solid rgba(56,189,248,.45);
+}
+.fault-table td, .fault-table th { font-size: 11px; }
+/* Lebar kolom minimum agar kolom tidak saling menimpa saat tabel menyusut. */
+.fault-table { min-width: 720px; }
+.fault-table thead th:nth-child(1) { min-width: 96px; }   /* Kode */
+.fault-table thead th.fault-th--msg { min-width: 320px; }  /* Keterangan + filter */
+.fault-table tbody td:nth-child(2) { white-space: normal; }
+/* [FITUR 2026-10-11] Header tabel fault dapat diklik untuk mengurutkan. */
+.fault-table thead th.fault-th {
+  cursor: pointer; user-select: none; white-space: nowrap;
+}
+.fault-table thead th.fault-th:hover { color: #e2e8f0; }
+.fault-table thead th.fault-th--msg { white-space: nowrap; }
+/* Header Keterangan: label + kotak filter berdampingan (inline), tidak tumpang tindih. */
+.fault-th-inner { display: inline-flex; align-items: center; gap: 10px; }
+.fault-th-inner .fault-th-label { white-space: nowrap; }
+.th-sort-ico { font-size: 9px; margin-left: 3px; opacity: .45; vertical-align: 1px; }
+.th-sort-ico.is-active { opacity: 1; color: #38bdf8; }
+/* Kotak filter teks — kecil, ringkas, diletakkan di SAMPING judul kolom. */
+.fault-col-filter {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 3px 8px; border-radius: 6px;
+  background: rgba(2,6,23,.7); border: 1px solid var(--border-2, #1e293b);
+  width: 170px; max-width: 170px;
+}
+.fault-col-filter i { color: var(--text-mute, #64748b); font-size: 10px; flex: 0 0 auto; }
+.fault-col-filter .fault-filter-input {
+  width: 100%; min-width: 0; background: transparent; border: 0;
+  color: var(--text, #e2e8f0); font-size: 10.5px; font-family: inherit;
+  padding: 0; outline: none; min-height: 0;
+}
+.fault-col-filter:focus-within { border-color: #38bdf8; }
+.fault-top-code {
+  display: inline-block; margin-left: 3px; padding: 1px 4px; border-radius: 3px;
+  font-family: 'JetBrains Mono', monospace; font-size: 9.5px; font-weight: 600;
+  background: rgba(148,163,184,.14); color: #cbd5e1;
+}
+.fault-active-dot { color: #f87171; font-size: 9px; vertical-align: middle; }
+.fault-cell { font-size: 11px; white-space: nowrap; }
+
+/* -------------------------------------------------------------------------
+ * [T10.3 2026-10-09] PANEL MATRIKS BEBAN CLUTCH (HD785).
+ * Gaya mengikuti blok `.fault-*` di atas agar panel terasa satu keluarga:
+ * latar gelap #1e293b, aksen ungu (powertrain), monospace untuk angka.
+ * ------------------------------------------------------------------------- */
+.clutch-block { margin-top: 14px; }
+.clutch-block-title {
+  font-size: 12px; font-weight: 700; color: #a78bfa; margin: 0 0 8px;
+  display: flex; align-items: center; gap: 6px;
+}
+.clutch-heat-wrap { overflow-x: auto; }
+.clutch-heat {
+  border-collapse: separate; border-spacing: 2px; width: 100%; min-width: 420px;
+}
+.clutch-heat th {
+  font-size: 9.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .35px;
+  color: #94a3b8; padding: 5px 6px; text-align: center; white-space: nowrap;
+}
+.clutch-heat thead th { border-bottom: 1px solid #1e293b; }
+.clutch-heat tbody th {
+  text-align: left; color: #e2e8f0; font-size: 11px; font-weight: 700;
+  text-transform: none; letter-spacing: 0; padding: 6px 8px;
+  background: rgba(30,41,59,.55); border-radius: 6px;
+}
+.clutch-heat td {
+  text-align: center; padding: 6px 8px; border-radius: 6px;
+  font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #e2e8f0;
+  min-width: 56px; cursor: default;
+}
+.clutch-heat td.clutch-score {
+  font-weight: 700; color: #fbbf24; background: rgba(30,41,59,.75);
+}
+/* [ISTILAH 2026-10-13] Baris keterangan judul sumbu-X ("Slip time area" /
+   "Clutch area") di bawah header kolom. Menjawab pertanyaan "Area 3 itu
+   area APA?" tanpa memaksa pengguna menebak. */
+.clutch-heat tr.clutch-axis-row th { border-bottom: none; }
+.clutch-heat tr.clutch-axis-row td.clutch-axis-note {
+  font-family: inherit; font-size: 10px; font-weight: 500;
+  color: #94a3b8; text-transform: none; letter-spacing: 0;
+  background: transparent; min-width: 0; padding: 2px 8px 6px;
+  border-bottom: 1px solid #1e293b; white-space: nowrap;
+}
+.clutch-heat tr.clutch-axis-row td.clutch-axis-note strong { color: #a78bfa; }
+
+/* [D375A 2026-10-13] Tabel Perpindahan Gigi (7x7 From->To).
+   Diagonal From=To ditampilkan netral ("—") karena secara fisik mustahil;
+   baris Total ditebalkan sebagai penutup. */
+.shift-heat td.shift-diag {
+  background: rgba(148,163,184,.08); color: #64748b; font-style: normal;
+}
+.shift-heat tr.shift-coltotal th {
+  background: rgba(56,189,248,.12); color: #7dd3fc;
+}
+.shift-heat tr.shift-coltotal td { border-top: 1px solid #334155; }
+.clutch-top { font-size: 11.5px; color: #cbd5e1; margin: 10px 0 0; }
+.clutch-note {
+  font-size: 10.5px; color: #fbbf24; margin: 8px 0 0; line-height: 1.5;
+  padding: 7px 10px; border-radius: 6px; background: rgba(251,191,36,.08);
+  border-left: 2px solid rgba(251,191,36,.45);
+}
+.clutch-warn-list { margin: 6px 0 0; padding-left: 18px; }
+.clutch-warn-list li { font-size: 10.5px; color: #94a3b8; margin-bottom: 3px; line-height: 1.45; }
+.clutch-cut-note {
+  font-size: 11px; color: #fde68a; margin: 8px 0 4px; line-height: 1.55;
+  padding: 9px 11px; border-radius: 6px; background: rgba(245,158,11,.12);
+  border-left: 3px solid #f59e0b;
+}
+.clutch-cut-note strong { color: #fbbf24; }
+.clutch-method {
+  font-size: 10.5px; color: #94a3b8; margin: 14px 0 0; line-height: 1.55;
+  padding: 8px 10px; border-radius: 6px; background: rgba(139,92,246,.07);
+  border-left: 2px solid rgba(139,92,246,.45);
+}
+
+
+/* [T13 2026-10-10] Panel sumber data PC2000 (load map / snapshot / op-ava).
+   Dipakai oleh js/vhms-extras-render.js. Tema mengikuti panel clutch agar
+   konsisten dengan panel VHMS lain. */
+.extras-stat-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(170px,1fr)); gap:10px; margin:10px 0 0; }
+/* [T13-rev2] Di dalam kartu utuh (.extras-block) kartu statistik dibuat
+   SEBARIS rata (kolom sama banyak) supaya tidak ada kartu yang jatuh ke
+   baris kedua dan meninggalkan celah kosong. */
+.extras-block .extras-stat-grid {
+  display: flex;
+  flex-wrap: nowrap;
+  gap: 8px;
+}
+.extras-block .extras-stat-grid > .extras-card {
+  flex: 1 1 0;
+  min-width: 0;
+}
+.extras-card { padding:10px 12px; border-radius:8px; background:rgba(30,41,59,.55); border-left:3px solid #38bdf8; }
+.extras-card.warn { border-left-color:#f59e0b; background:rgba(245,158,11,.10); }
+.extras-card.crit { border-left-color:#ef4444; background:rgba(239,68,68,.10); }
+.extras-card-label { font-size:10.5px; color:#94a3b8; margin-bottom:4px; line-height:1.35; }
+.extras-card-value { font-size:19px; font-weight:700; color:#e2e8f0; line-height:1.1; }
+.extras-card-unit { font-size:11px; font-weight:500; color:#94a3b8; margin-left:4px; }
+.extras-card-note { font-size:10px; color:#94a3b8; margin-top:6px; line-height:1.45; }
+.extras-sub { font-size:12px; font-weight:600; color:#cbd5e1; margin:16px 0 6px; }
+/* [FITUR 2026-10-11] TABEL LOAD MAP — kolom di-grid dengan lebar tetap agar
+   header tabel sumbu X dan sumbu Y (juga perbandingan/distribusi torsi)
+   SEJAJAR satu sama lain dan rapi, karena tabel kini ditumpuk vertikal. */
+.extras-table { width:100%; border-collapse:collapse; table-layout:fixed; }
+.extras-table th {
+  font-size:10.5px; color:#94a3b8; text-align:left; padding:8px 10px;
+  border-bottom:1px solid rgba(148,163,184,.25); white-space:nowrap;
+  vertical-align:middle; line-height:1.3; text-transform:uppercase; letter-spacing:.3px;
+}
+.extras-table td { font-size:11px; color:#cbd5e1; padding:6px 10px; border-bottom:1px solid rgba(148,163,184,.10); vertical-align:middle; }
+/* [O-1 2026-10-12] Header BARIS (`th[scope=row]`) di dalam `tbody` adalah sel
+   data, bukan judul kolom. Tanpa aturan ini ia mewarisi `.extras-table th`
+   di atas sehingga teksnya menjadi HURUF BESAR semua, kecil, dan redup —
+   terbukti di tangkapan layar tabel keterangan meter ("METER KEY-ON"). */
+.extras-table tbody th {
+  font-size: 11px; color: #cbd5e1; padding: 6px 10px;
+  border-bottom: 1px solid rgba(148, 163, 184, .10);
+  text-transform: none; letter-spacing: 0; font-weight: 600;
+  white-space: nowrap; vertical-align: middle;
+}
+/* Lebar kolom bersama (dipakai semua tabel load map). Kolom numerik diberi
+   lebar sama + perataan center agar kepala & isi sejajar antar tabel. */
+.extras-table col.c-axis   { width: 17%; }
+.extras-table col.c-v1     { width: 10%; }
+.extras-table col.c-v2     { width: 10%; }
+.extras-table col.c-diff   { width: 13%; }
+.extras-table col.c-verdict{ width: 50%; }
+/* [2026-10-12] Tabel snapshot: 8 kolom (Parameter..Rentang + Result). Kolom
+   numerik dirapatkan agar kolom Result tetap punya ruang baca nyaman. */
+.extras-table--snap col.c-param  { width: 20%; }
+.extras-table--snap col.c-unit   { width: 7%; }
+.extras-table--snap col.c-v1     { width: 9%; }
+.extras-table--snap col.c-verdict{ width: 38%; }
+/* [2026-10-12] Tabel Duty Mode: 5 kolom mode + 3 kolom rentang SMR di kanan.
+   Kolom rentang berlatar sedikit berbeda agar jelas bahwa nilainya berlaku
+   untuk SELURUH baris (bukan per mode). */
+.extras-table--duty td.duty-range {
+  background: rgba(56,189,248,.06);
+  border-left: 1px solid rgba(148,163,184,.20);
+  vertical-align: middle;
+}
+.extras-table--duty td.duty-range-op { background: rgba(34,197,94,.07); }
+.extras-table--duty .duty-range-unit { font-size: 9px; color: #64748b; margin-left: 2px; }
+.extras-table--duty .duty-range-note {
+  font-size: 9px; color: #94a3b8; margin-top: 2px; white-space: nowrap;
+}
+/* [2026-10-12] Baris REMARK di atas nama kolom tabel Duty Mode. Tampil kecil,
+   tanpa huruf kapital paksa, agar terbaca sebagai keterangan — bukan judul. */
+.extras-table--duty .duty-hint-row th {
+  padding: 4px 10px 2px;
+  border-bottom: none;
+  text-transform: none;
+  letter-spacing: 0;
+  vertical-align: bottom;
+}
+.extras-table--duty .duty-hint {
+  font-size: 9px; font-weight: 500; color: #64748b;
+  font-style: italic; text-transform: none; letter-spacing: 0;
+}
+.extras-table--duty .duty-hint-row + tr th { padding-top: 2px; }
+.extras-legend .lg-b { color: #7dd3fc; font-weight: 600; }
+/* Judul kolom bertooltip: beri isyarat dapat di-arahkan (dotted underline). */
+.extras-table--duty thead tr:last-child th[title] {
+  cursor: help;
+  text-decoration: underline dotted rgba(148,163,184,.45);
+  text-underline-offset: 3px;
+}
+.extras-table--duty tbody td[title] { cursor: help; }
+.extras-table thead th.num, .extras-table tbody td.num { text-align:center; }
+/* [FITUR 2026-10-11] Kolom "Result / Hipotesis" + "Selisih" pada tabel load map.
+   Verdict diwarnai per tingkat keparahan; kolom Selisih = selisih vs ambang rujukan. */
+.extras-table td.verdict-cell { white-space:normal; min-width:190px; max-width:340px; font-size:10.5px; line-height:1.4; }
+.extras-table .verdict-diff { font-size:9.5px; color:#94a3b8; margin-top:2px; }
+.extras-table .verdict-diff strong { font-size:10px; }
+/* [2026-10-12] Chip rujukan manual pada kolom Result — agar teknisi tahu
+   dari mana klasifikasi/ambang berasal (pola sama dengan KB VHMS/SOS). */
+.extras-table .verdict-diff.refs { display:flex; flex-wrap:wrap; gap:4px; margin-top:4px; }
+.extras-table .ref-chip {
+  font-size:9px; color:#7dd3fc; background:rgba(56,189,248,.12);
+  border:1px solid rgba(56,189,248,.28); border-radius:10px;
+  padding:1px 6px; line-height:1.5; white-space:normal;
+}
+.extras-table td.verdict-ok { color:#86efac; border-left:2px solid rgba(34,197,94,.5); }
+.extras-table td.verdict-warn { color:#fcd34d; border-left:2px solid rgba(245,158,11,.6); background:rgba(245,158,11,.07); }
+.extras-table td.verdict-crit { color:#fca5a5; border-left:2px solid rgba(239,68,68,.7); background:rgba(239,68,68,.08); font-weight:600; }
+.extras-table td.verdict-muted { color:#94a3b8; }
+.extras-table td.verdict-none { color:#64748b; }
+.extras-table td.verdict-over { color:#fbbf24; font-weight:700; }
+.extras-table td.verdict-under { color:#4ade80; font-weight:700; }
+.extras-warn { margin:10px 0 0; padding-left:18px; }
+.extras-warn li { font-size:10.5px; color:#fbbf24; margin-bottom:3px; line-height:1.45; }
+.extras-foot { font-size:10px; color:#64748b; margin:14px 0 0; line-height:1.5; font-style:italic; }
+/* [FITUR 2026-10-11] Kontrol FILTER RENTANG TANGGAL panel Oper. Availability. */
+.opava-filter {
+  display: flex; align-items: center; flex-wrap: wrap; gap: 8px;
+  margin: 10px 0 12px; padding: 8px 10px; border-radius: 8px;
+  background: rgba(56,189,248,.07); border: 1px solid rgba(56,189,248,.18);
+}
+.opava-filter-label { font-size: 11px; font-weight: 600; color: #94a3b8; display: inline-flex; align-items: center; gap: 6px; }
+.opava-filter-label i { color: #38bdf8; }
+.opava-date { display: inline-flex; align-items: center; gap: 6px; font-size: 10.5px; color: #94a3b8; }
+/* [FITUR 2026-10-11] Kolom tanggal: input + TOMBOL kalender yang jelas.
+   Indikator bawaan browser disembunyikan (sulit diklik di tema gelap); kita
+   sediakan tombol kalender sendiri di kanan yang memicu showPicker(). */
+.opava-date .opava-date-wrap {
+  position: relative; display: inline-flex; align-items: center;
+  background: rgba(2,6,23,.7); border: 1px solid var(--border-2, #1e293b);
+  border-radius: 6px; overflow: hidden;
+}
+.opava-date .opava-date-wrap:focus-within { border-color: #38bdf8; }
+.opava-date .opava-date-input {
+  background: transparent; border: 0; color: #e2e8f0;
+  font-size: 11px; font-family: inherit;
+  padding: 5px 4px 5px 10px; min-height: 0; width: 128px; cursor: pointer;
+}
+.opava-date .opava-date-input:focus { outline: none; }
+.opava-date .opava-date-input::-webkit-calendar-picker-indicator {
+  /* Sembunyikan ikon bawaan; tombol kalender kita sendiri yang dipakai. */
+  position: absolute; right: 0; width: 30px; height: 100%;
+  opacity: 0; cursor: pointer;
+}
+.opava-date .opava-date-btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 30px; height: 30px; border: 0; cursor: pointer;
+  background: rgba(56,189,248,.14); color: #38bdf8;
+  border-left: 1px solid rgba(56,189,248,.22);
+  font-size: 12px; transition: background .15s, color .15s;
+}
+.opava-date .opava-date-btn:hover { background: rgba(56,189,248,.28); color: #e0f2fe; }
+.opava-date .opava-date-btn:active { background: rgba(56,189,248,.4); }
+.opava-quick { margin-left: 2px; }
+.opava-filter .opava-quick:first-of-type { margin-left: 6px; }
+
+/* [T13-rev 2026-10-10] LAYOUT 2 KOLOM (kiri | kanan) untuk blok panel.
+   Tujuan: menghemat ruang vertikal — dua blok berdampingan, bukan bertumpuk.
+   - `.extras-duo`      : wadah grid 2 kolom, runtuh ke 1 kolom di layar sempit.
+   - `.extras-col`      : satu kolom (kartu bersanding).
+   - `.extras-block`    : KARTU UTUH pembungkus isi kolom (judul+legenda+
+                          kartu+tabel) — inilah "card utuh single side".
+   - `.extras-legend`   : keterangan/legenda kecil di bawah judul blok. */
+.extras-duo {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+  align-items: start;
+  margin-top: 6px;
+}
+.extras-col { min-width: 0; }
+/* [FITUR 2026-10-11] Varian tumpuk: satu tabel per baris (lebar penuh) agar
+   kolom "Result / Hipotesis" punya ruang dan tidak terpotong. */
+.extras-duo--stack { grid-template-columns: 1fr; }
+.extras-duo--stack .extras-col + .extras-col { margin-top: 4px; }
+/* Tabel panjang pada varian tumpuk: batasi tinggi agar halaman tetap ringkas. */
+.extras-duo--stack .clutch-heat-wrap { max-height: 340px; overflow-y: auto; }
+/* [T13-rev3] STRUKTUR BERSARANG: grup bertumpuk vertikal, tiap grup =
+   kartu utuh di ATAS + tabel berdampingan LH|RH di BAWAH. */
+.extras-stack { display: grid; grid-template-columns: 1fr; gap: 4px; }
+.extras-group { min-width: 0; }
+/* Kartu utuh: satu bingkai untuk judul + legenda + kartu + tabel. */
+.extras-block {
+  padding: 14px;
+  border-radius: 10px;
+  background: rgba(15,23,42,.42);
+  border: 1px solid rgba(56,189,248,.18);
+}
+/* Tabel di bawah kartu utuh (dalam grup) diberi jarak agar terpisah jelas. */
+.extras-group > .extras-duo { margin-top: 12px; }
+.extras-group > .extras-duo > .extras-col > .extras-sub:first-child { margin-top: 0; }
+.extras-block > .extras-sub:first-child,
+.extras-block > .clutch-block-title:first-child { margin-top: 0; }
+/* Di layar sempit: tumpuk kembali agar tabel tidak terpotong. */
+@media (max-width: 900px) {
+  .extras-duo { grid-template-columns: 1fr; }
+}
+.extras-legend {
+  font-size: 10px; color: #94a3b8; line-height: 1.5;
+  margin: 0 0 8px; padding: 7px 9px; border-radius: 6px;
+  background: rgba(56,189,248,.07);
+  border-left: 2px solid rgba(56,189,248,.4);
+}
+.extras-legend strong { color: #cbd5e1; }
+.extras-legend code {
+  font-family: 'JetBrains Mono', monospace; font-size: 9.5px;
+  background: rgba(148,163,184,.14); padding: 0 3px; border-radius: 3px; color: #e2e8f0;
+}
+.extras-legend .lg-g { color: #4ade80; }
+.extras-legend .lg-y { color: #fbbf24; }
+.extras-legend .lg-r { color: #f87171; }
+/* Tanda STUCK di dalam sel tabel (bukan hanya di legenda). */
+.extras-table .lg-r {
+  color: #f87171; font-size: 9px; font-weight: 700; letter-spacing: .4px;
+  background: rgba(248,113,113,.14); padding: 0 4px; border-radius: 3px;
+}
+.extras-table tbody tr.row-warn { background: rgba(69,26,3,.22); box-shadow: inset 3px 0 0 var(--amber); }
+/* [2026-10-12] Tabel parameter snapshot memuat ~50 baris -> beri gulir
+   dengan kepala tabel melekat agar kartu tidak memanjang tak terkendali. */
+.extras-scroll { max-height: 420px; overflow-y: auto; }
+.extras-scroll table.data thead th {
+  position: sticky; top: 0; z-index: 2; background: #0f172a;
+}
+/* Kartu judul blok di dalam kolom: judul rata-kiri tanpa margin berlebih. */
+.extras-col .clutch-block-title { margin-top: 0; }
+
+/* =====================================================================
+ * [HD785 2026-10-14] Panel beban per gigi & peta duty operasi.
+ * ---------------------------------------------------------------------
+ * Hanya menambah kelas ber-awalan `.pt-`; kelas `.extras-*` dipakai ulang
+ * apa adanya agar kedua panel baru SERAGAM dengan panel PC2000 yang sudah
+ * ada (satu bahasa visual, bukan dua).
+ * ===================================================================== */
+
+/* Bar proporsi dua segmen (lock-up vs converter, bermuatan vs kosong). */
+.pt-bar {
+  display: flex; width: 100%; height: 12px; margin: 10px 0 6px;
+  border-radius: 6px; overflow: hidden; background: rgba(148,163,184,.14);
+}
+.pt-bar-a { background: linear-gradient(90deg, #38bdf8, #0ea5e9); }
+.pt-bar-b { background: linear-gradient(90deg, #f59e0b, #d97706); }
+.pt-bar-legend { background: none; border-left: 0; padding: 0; margin: 0 0 4px; }
+.pt-key {
+  display: inline-block; width: 9px; height: 9px; border-radius: 2px;
+  margin-right: 3px; vertical-align: -1px;
+}
+.pt-key-a { background: #0ea5e9; }
+.pt-key-b { background: #d97706; }
+
+/* Kotak kesimpulan pasangan bermuatan/kosong. Satu-satunya elemen panel
+   ini yang boleh berwarna "vonis" — dasarnya perbandingan unit dengan
+   dirinya sendiri, bukan ambang pabrik yang tidak dapat dibuktikan. */
+.pt-delta {
+  font-size: 11px; line-height: 1.5; margin: 10px 0 2px;
+  padding: 9px 11px; border-radius: 7px;
+}
+.pt-delta i { margin-right: 6px; }
+.pt-delta-ok {
+  color: #bbf7d0; background: rgba(34,197,94,.10);
+  border-left: 3px solid #22c55e;
+}
+.pt-delta-bad {
+  color: #fecaca; background: rgba(239,68,68,.12);
+  border-left: 3px solid #ef4444;
+}
+
+/* Catatan keterbatasan data (berkas belum lengkap / tanpa ambang OEM). */
+.extras-legend.pt-warn {
+  background: rgba(245,158,11,.09);
+  border-left-color: rgba(245,158,11,.55);
+  color: #fcd9a4;
+}
+.extras-legend.pt-warn strong { color: #fde68a; }
+
+/* Penjelasan BASIS angka. Ditonjolkan karena panel retarder memakai dua
+   basis berbeda; membaca angka tanpa tahu basisnya akan menyesatkan. */
+.extras-legend.pt-basis {
+  background: rgba(139,92,246,.10);
+  border-left-color: rgba(139,92,246,.55);
+}
+.extras-legend.pt-basis strong { color: #ddd6fe; }

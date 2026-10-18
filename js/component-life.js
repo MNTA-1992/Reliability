@@ -9,7 +9,7 @@
  *   Mencampur sampel komponen LAMA dengan komponen BARU merusak trend,
  *   rate-of-change, dan evidence (durasi) di skor criticality.
  *
- * CARA KERJA (lihat docs/SPEK_COMPONENT_LIFE_CUTOFF.md):
+ * CARA KERJA (status & keputusan: docs/STATUS_PROYEK.md):
  *   Untuk tiap pasangan (unit x kompartemen) buang sampel yang terjadi
  *   SEBELUM pemasangan komponen terakhir. Skema HIBRIDA berjenjang:
  *     TIER 1  tanggal (LastTecoDate)        -> keyakinan 'tinggi'

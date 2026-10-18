@@ -132,6 +132,35 @@
     return isNaN(n) ? null : n;
   }
 
+  /**
+   * [O-5 2026-10-12] Varian KETAT dari `toNum`, untuk kolom TELEMETRI.
+   *
+   * `toNum` di atas sengaja longgar karena melayani berkas LAB/SAP yang
+   * memakai format Indonesia ("1.234,5"). Longgar itu BERBAHAYA untuk
+   * telemetri VHMS. Perbedaan terukur di browser:
+   *
+   *   masukan     toNum (longgar)   toNumStrict (ketat)
+   *   "12abc" ... 12                null     <- parseFloat memotong sampah
+   *   "3,5" ..... 3.5               null     <- koma BUKAN desimal di berkas VHMS
+   *   "1.234,5" . 1234.5            null
+   *
+   * Berkas VHMS/Komatsu selalu memakai titik sebagai desimal dan TIDAK memakai
+   * pemisah ribuan, sehingga nilai bertanda koma atau berimbuhan huruf adalah
+   * data rusak — harus menjadi `null`, bukan angka tebakan. Menerima "12abc"
+   * sebagai 12 akan menyelundupkan nilai palsu ke tren dan estimasi RUL.
+   *
+   * Fungsi ini menyatukan empat salinan identik yang sebelumnya hidup di
+   * `vhms-snapshot.js`, `vhms-loadmap.js`, `vhms-opava.js`, dan
+   * `vhms-fault-parser.js`.
+   */
+  function toNumStrict(v) {
+    if (v === null || v === undefined) return null;
+    var s = String(v).trim();
+    if (s === '' || s === '-' || s === '---') return null;
+    var n = Number(s);
+    return isFinite(n) ? n : null;
+  }
+
   /** Escape string untuk output CSV. */
   function csvEscape(v) {
     if (v === null || v === undefined) return '';
@@ -150,6 +179,8 @@
     detectDelim: detectDelim,
     findColIndex: findColIndex,
     toNum: toNum,
+    // [O-5] Varian ketat untuk kolom telemetri — lihat catatan di atas.
+    toNumStrict: toNumStrict,
     csvEscape: csvEscape
   };
 

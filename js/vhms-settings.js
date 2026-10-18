@@ -141,6 +141,35 @@
     return true;
   }
 
+  /* ---------------------------------------------------------------------
+   * [B15 2026-10-10 — MIGRASI SATUAN] `*ExhOver700/750/800` detik -> persen.
+   * ---------------------------------------------------------------------
+   * Sebelum B14, ambang duty gas buang disimpan dalam DETIK (HD785: 300/1800;
+   * excavator 800: 300/1800). Setelah B14, `normalizeExhaustDuty()` selalu
+   * mengubah nilai kolom menjadi PERSEN jendela, sehingga ambang LAMA menjadi
+   * mustahil terlampaui (mis. 25 % vs warn 300 detik -> SELALU NORMAL).
+   *
+   * Bila threshold tersimpan dari versi lama dibiarkan menempel, bug HD785
+   * yang baru diperbaiki akan HIDUP KEMBALI secara senyap pada setiap
+   * browser yang pernah memakai versi lama. Karena itu nilai tersimpan
+   * untuk kunci ini DIBUANG (bukan dikonversi) saat terdeteksi masih bersatuan
+   * detik — nilai persen yang benar lalu diambil dari config keluaran baru.
+   *
+   * Deteksi: kunci cocok /^[a-z]{2}ExhOver(700|750|800)$/ DAN nilai warn
+   * > EXH_PCT_MAX (50). Nilai persen sah maksimum 100, tetapi ambang warn
+   * 50 % ke atas tidak masuk akal sebagai alarm -> aman dipakai sebagai
+   * pembeda satuan. Ambang 300 (detik) > 50 -> terdeteksi.
+   * ------------------------------------------------------------------- */
+  var EXH_OVER_RE = /^[a-z]{2}ExhOver(700|750|800)$/;
+  var EXH_PCT_MAX = 50;
+  /** Kembalikan true bila entri ini MILIK kunci duty & masih bersatuan detik. */
+  function isLegacyExhaustDutyUnit(k, th) {
+    if (!EXH_OVER_RE.test(k) || !th) return false;
+    var w = th.warn;
+    if (typeof w !== 'number') return false;
+    return w > EXH_PCT_MAX || (typeof th.crit === 'number' && th.crit > 100);
+  }
+
   /**
    * Muat override tersimpan & tempel ke objek config (in-place).
    * VHMS disimpan per-keluarga: { BASE: {...}, DOZER: {...}, ... } agar
@@ -157,6 +186,7 @@
         if (isFlat) {
           // Kompatibilitas: terapkan ke base config.
           Object.keys(vSaved).forEach(function (k) {
+            if (isLegacyExhaustDutyUnit(k, vSaved[k])) return;   // [B15] buang detik lama
             if (vcfg.THRESHOLDS[k]) {
               if (k === BOOST_KEY) migrateBoostThreshold(vSaved[k]);
               Object.assign(vcfg.THRESHOLDS[k], vSaved[k]);
@@ -168,6 +198,7 @@
             var set = vhmsThresholdSetFor(family);
             var saved = vSaved[family] || {};
             Object.keys(saved).forEach(function (k) {
+              if (isLegacyExhaustDutyUnit(k, saved[k])) return;  // [B15] buang detik lama
               if (k === BOOST_KEY) migrateBoostThreshold(saved[k]);
               if (set[k]) Object.assign(set[k], saved[k]);
               else set[k] = saved[k];
@@ -206,7 +237,16 @@
     try {
       var v = JSON.parse(localStorage.getItem(VMODEL_KEY) || 'null');
       if (v && typeof v === 'object' && vcfg.MODEL_THRESHOLDS) {
-        Object.keys(v).forEach(function (m) { vcfg.MODEL_THRESHOLDS[m] = v[m]; });
+        Object.keys(v).forEach(function (m) {
+          var set = v[m] || {};
+          // [B15] Buang ambang duty gas buang yang masih bersatuan DETIK,
+          // agar bug HD785/PC2000 tidak hidup kembali lewat override model
+          // yang tersimpan dari versi lama.
+          Object.keys(set).forEach(function (k) {
+            if (isLegacyExhaustDutyUnit(k, set[k])) delete set[k];
+          });
+          vcfg.MODEL_THRESHOLDS[m] = set;
+        });
       }
     } catch (e) { warnFail('muat MODEL_THRESHOLDS VHMS', e); }
   }
@@ -408,8 +448,23 @@
   function importThresholdsCsv(text) {
     var lines = String(text).replace(/\r\n?/g, '\n').split('\n').filter(function (l) { return l.trim() !== ''; });
     if (lines.length < 2) throw new Error('CSV kosong / tidak valid.');
+    // [O-5 2026-10-12] Delegasi ke CSV_UTIL. Implementasi lokal sebelumnya
+    // IDENTIK secara logika dengan `CSV_UTIL.splitLine` (escape `""`, trim
+    // hasil), hanya pemilihan delimiternya ditulis ulang di sini.
+    //
+    // PERBEDAAN HALUS yang dipertahankan dengan sengaja: pemilihan delimiter
+    // di sini memakai URUTAN KEUTAMAAN (`;` dulu, lalu tab, lalu `,`) karena
+    // berkas ekspor threshold SELALU memakai `;` — sedangkan
+    // `CSV_UTIL.detectDelim` memilih delimiter yang PALING BANYAK muncul.
+    // Keduanya berbeda pada kasus nyata: label threshold boleh memuat koma
+    // (mis. `Blowby, maks`), sehingga jumlah koma dapat melebihi `;` dan
+    // detectDelim akan salah memilih. Karena itu delimiter tetap ditentukan
+    // di sini, dan HANYA pemisahannya yang didelegasikan.
     function splitLine(line) {
       var delim = (line.indexOf(';') !== -1) ? ';' : (line.indexOf('\t') !== -1 ? '\t' : ',');
+      var cu = global.CSV_UTIL;
+      if (cu && typeof cu.splitLine === 'function') return cu.splitLine(line, delim);
+      // Fallback (CSV_UTIL belum termuat) — perilaku sama.
       var out = [], cur = '', inQ = false;
       for (var i = 0; i < line.length; i++) {
         var ch = line[i];
@@ -679,15 +734,19 @@
       if (!keys.length) return;
       var label = (vcfg.DIRECTION_LABELS && vcfg.DIRECTION_LABELS[grp]) || ('Grup ' + grp);
       var badgeColor = (grp === 'HIGH') ? '#f87171' : '#38bdf8';
-      html += '<tr class="th-group-row"><td colspan="5" style="background:rgba(2,6,23,.85);' +
+      html += '<tr class="th-group-row"><td colspan="6" style="background:rgba(2,6,23,.85);' +
         'color:' + badgeColor + ';font-weight:700;font-size:11px;letter-spacing:.5px;text-transform:uppercase;' +
         'padding:8px 10px;border-top:1px solid var(--border-2)">' +
         '<i class="fa-solid fa-' + (grp === 'HIGH' ? 'arrow-trend-up' : 'arrow-trend-down') + '"></i> ' +
         esc(label) + ' (' + keys.length + ')</td></tr>';
       html += keys.map(function (k) {
         var th = set[k] || {};
+        var prov = th.provisional;
+        var src = th.source || (prov ? 'Sementara (provisional)' : '');
         return '<tr data-vth="' + esc(k) + '">' +
-          '<td><strong>' + esc(k) + '</strong></td>' +
+          '<td><strong>' + esc(k) + '</strong>' +
+            (prov ? ' <span class="pf-badge" title="Nilai sementara — belum terkonfirmasi">PROV</span>' : '') +
+            '</td>' +
           '<td class="center"><input type="number" step="any" data-field="warn" value="' + (th.warn != null ? th.warn : '') + '" style="width:90px"></td>' +
           '<td class="center"><input type="number" step="any" data-field="crit" value="' + (th.crit != null ? th.crit : '') + '" style="width:90px"></td>' +
           '<td class="center"><select data-field="mode" style="width:80px">' +
@@ -695,6 +754,7 @@
             '<option value="low"' + (th.mode === 'low' ? ' selected' : '') + '>low</option>' +
           '</select></td>' +
           '<td><input type="text" data-field="label" value="' + esc(th.label || '') + '" style="width:100%"></td>' +
+          '<td><span class="u-text-mute" style="font-size:10.5px">' + esc(src) + '</span></td>' +
           '</tr>';
       }).join('');
     });
@@ -1327,6 +1387,9 @@
     validateThresholdSet: validateThresholdSet,
     renderClcPanel: renderClcPanel,
     open: openSettings,
-    close: closeSettings
+    close: closeSettings,
+    // [B15 2026-10-10] Diekspor agar dapat diuji langsung (migrasi satuan
+    // duty gas buang detik -> persen). Bukan API publik aplikasi.
+    isLegacyExhaustDutyUnit: isLegacyExhaustDutyUnit
   };
 })(typeof window !== 'undefined' ? window : globalThis);

@@ -32,6 +32,155 @@
     };
   }
 
+  /**
+   * [T5.6 2026-10-08] Kurva KUMULATIF untuk parameter bertipe DELTA.
+   * ---------------------------------------------------------------------
+   * ⚠ PERINGATAN PENTING — BACA SEBELUM MEMAKAI `slope` PADA PARAMETER INI.
+   *
+   * Kolom `TC Oil T.120-` / `130-` / `140-` pada `tm_trend0.CSV` berisi
+   * AKUMULASI DETIK **PER PERIODE SNAPSHOT**, bukan akumulasi seumur hidup.
+   * Buktinya: nilainya naik-turun antar-snapshot pada file contoh (mustahil
+   * untuk besaran kumulatif).
+   *
+   * KONSEKUENSINYA: menghitung `slope` langsung atas nilai DELTA lalu
+   * menafsirkannya sebagai "laju keausan" adalah SALAH. `slope` atas delta
+   * hanya mengukur TREN INTENSITAS duty per interval, bukan pertumbuhan
+   * total. Untuk mendapatkan besaran kumulatif yang benar, JUMLAHKAN delta
+   * memakai fungsi ini — bukan lewat slope.
+   *
+   * @param {array}  records  record hasil parse (terurut SMR naik)
+   * @param {string} paramKey key parameter bertipe delta
+   * @returns {array} daftar { smr, delta, cum } — cum = akumulasi berjalan.
+   * ---------------------------------------------------------------------
+   */
+  function cumulative(records, paramKey) {
+    var out = [];
+    var acc = 0;
+    (records || []).forEach(function (r) {
+      if (!r) return;
+      var v = r[paramKey];
+      if (v === null || v === undefined || isNaN(v)) return;
+      acc += v;
+      out.push({ smr: r.smr, delta: v, cum: acc });
+    });
+    return out;
+  }
+
+  /** Total akumulasi sebuah parameter delta (ringkas). */
+  function cumulativeTotal(records, paramKey) {
+    var series = cumulative(records, paramKey);
+    return series.length ? series[series.length - 1].cum : 0;
+  }
+
+  /* -----------------------------------------------------------------------
+   * [PC2000 2026-10-10 — T4] NORMALISASI DUTY GAS BUANG -> PERSEN JENDELA.
+   * ---------------------------------------------------------------------
+   * MENGAPA: kolom `LF/LR/RF/RR Exh.Temp 700-|750-|800-` berisi DETIK di atas
+   * ambang, terakumulasi di dalam jendela SMR antar-baris. Panjang jendela
+   * berbeda antar unit (PC2000 ~200 jam, HD785 ~40 jam), sehingga detik mentah
+   * TIDAK dapat dibandingkan antar unit maupun diberi ambang tunggal.
+   *
+   * RUMUS:  persen = 100 × detik / (ΔSMR × 3600)
+   *   - `ΔSMR` = SMR[i] − SMR[i−1] (sudah dalam JAM, parser menerapkan
+   *     SMR_SCALE).
+   *   - Baris PERTAMA tidak punya jendela -> nilainya diganti `null`, BUKAN 0.
+   *     Pada berkas contoh nilai pertama justru TERBESAR (650 065 s) karena
+   *     mengakumulasi sejak awal umur; bila dipakai akan selalu critical palsu.
+   *   - `ΔSMR <= 0` (duplikat SMR / urutan aneh) -> `null`, jangan bagi nol.
+   *   - Hasil di-clamp ke [0, 100]: nilai raw dapat melebihi jendela sedikit
+   *     (pembulatan SMR), dan persen >100 tidak bermakna.
+   *
+   * Sengaja HANYA menyentuh 12 parameter duty (`*ExhOver700/750/800`).
+   * Parameter trend lain tidak boleh diubah agar tidak ada regresi.
+   * Bersifat in-place & idempoten (memanggil dua kali memberi hasil sama
+   * karena nilai yang sudah dinormalkan berada dalam [0,100], dan syarat
+   * "baris pertama" ditentukan posisi, bukan nilai).
+   * --------------------------------------------------------------------- */
+  var EXHAUST_DUTY_KEYS = [
+    'lfExhOver700', 'lfExhOver750', 'lfExhOver800',
+    'lrExhOver700', 'lrExhOver750', 'lrExhOver800',
+    'rfExhOver700', 'rfExhOver750', 'rfExhOver800',
+    'rrExhOver700', 'rrExhOver750', 'rrExhOver800'
+  ];
+
+  /**
+   * Normalisasi duty gas buang -> PERSEN JENDELA.
+   *
+   * ⚠ TIDAK IDEMPOTEN bila dijalankan di tempat. Fungsi ini karena itu
+   *   MENGEMBALIKAN ARRAY BARU dan TIDAK PERNAH menyentuh `records` masukan.
+   *
+   *   Bug yang pernah terjadi (B13, 2026-10-10): fungsi memutasi in-place,
+   *   lalu `vhms-fleet-store` memanggil `analyze()` KEDUA kali atas array
+   *   yang sama saat merge/restore (tanpa CLC aktif, `_prepareRecords`
+   *   mengembalikan array asli, bukan klon). Hasilnya nilai persen dibagi
+   *   jendela LAGI -> `98.89` menjadi `0.01`. Diam, tanpa error.
+   *
+   *   Kalau kelak ada yang menambah `flag` "sudah dinormalisasi" sebagai
+   *   ganti klon: JANGAN. Flag hilang saat `JSON.stringify` di persistensi,
+   *   sehingga unit yang di-restore akan dinormalisasi ulang. Klon adalah
+   *   satu-satunya jaminan yang bertahan melintasi serialisasi.
+   */
+  function normalizeExhaustDuty(records) {
+    if (!records || !records.length) return records;
+
+    function blankFirstOnly(recs) {
+      var out = recs.map(function (r) { return r; });
+      if (!out.length) return out;
+      var c = shallowCopy(out[0]);
+      EXHAUST_DUTY_KEYS.forEach(function (k) { if (k in c) c[k] = null; });
+      out[0] = c;
+      return out;
+    }
+
+    if (records.length < 2) return blankFirstOnly(records);
+
+    // Apakah berkas ini memang punya kolom duty gas buang sama sekali?
+    // Bila tidak, kembalikan apa adanya (tanpa klon) — menghindari biaya.
+    var hasDuty = EXHAUST_DUTY_KEYS.some(function (k) {
+      for (var i = 0; i < records.length; i++) {
+        if (records[i][k] !== null && records[i][k] !== undefined) return true;
+      }
+      return false;
+    });
+    if (!hasDuty) return records;
+
+    var out = new Array(records.length);
+    for (var i = 0; i < records.length; i++) out[i] = shallowCopy(records[i]);
+
+    for (var n = 1; n < out.length; n++) {
+      var dSmr = out[n].smr - out[n - 1].smr;   // jam
+      var winSec = dSmr * 3600;
+      var valid = isFinite(dSmr) && dSmr > 0 && winSec > 0;
+      for (var j = 0; j < EXHAUST_DUTY_KEYS.length; j++) {
+        var key = EXHAUST_DUTY_KEYS[j];
+        if (!(key in out[n])) continue;
+        var raw = out[n][key];
+        if (raw === null || raw === undefined || isNaN(raw)) { out[n][key] = null; continue; }
+        if (!valid) { out[n][key] = null; continue; }
+        var pct = (100 * raw) / winSec;
+        if (!isFinite(pct)) { out[n][key] = null; continue; }
+        if (pct < 0) pct = 0;
+        if (pct > 100) pct = 100;
+        out[n][key] = Math.round(pct * 100) / 100;   // 2 desimal
+      }
+    }
+    // Baris pertama: tidak ada jendela -> null pada SEMUA kunci duty.
+    for (var b = 0; b < EXHAUST_DUTY_KEYS.length; b++) {
+      var k0 = EXHAUST_DUTY_KEYS[b];
+      if (k0 in out[0]) out[0][k0] = null;
+    }
+    return out;
+  }
+
+  /** Klon dangkal satu record + dalam-untuk `calendar` (pola vhms-fleet-store). */
+  function shallowCopy(r) {
+    if (!r) return r;
+    var c = {};
+    for (var k in r) { if (Object.prototype.hasOwnProperty.call(r, k)) c[k] = r[k]; }
+    if (r.calendar) c.calendar = { epoch: r.calendar.epoch, tzOffsetSec: r.calendar.tzOffsetSec, display: r.calendar.display };
+    return c;
+  }
+
   /** Least-squares slope dari (x=smr, y=nilai). */
   function slope(records, paramKey) {
     var xs = [], ys = [];
@@ -453,6 +602,27 @@
       validationReport = v.report;
     }
 
+    // [PC2000 2026-10-10 — T4] NORMALISASI DUTY GAS BUANG -> PERSEN JENDELA.
+    // ---------------------------------------------------------------------
+    // `chas_trend0.CSV` menyimpan tiap kolom `*Exh.Temp 700-/750-/800-` sebagai
+    // DETIK DI ATAS AMBANG, TERAKUMULASI DI DALAM jendela SMR antar-baris.
+    // Panjang jendela BERBEDA antar unit/model (PC2000 ~200 jam, HD785 ~40 jam),
+    // sehingga `warn: 300` detik berarti hal yang sangat berbeda pada keduanya.
+    //
+    // Persen jendela = 100 × detik / (ΔSMR × 3600).
+    //   - Baris PERTAMA tidak punya jendela (tak ada SMR sebelumnya) -> DIBUANG.
+    //     Nilainya di file contoh justru yang terbesar (650 065 s) sehingga
+    //     bila dipakai akan selalu memicu critical palsu.
+    //   - ΔSMR <= 0 (duplikat/urutan aneh) -> tidak dihitung.
+    //
+    // SENGAJA HANYA untuk parameter duty (7xx/8xx). Parameter trend lain
+    // tidak dinormalisasi agar tidak ada regresi.
+    //
+    // ⚠ WAJIB memakai NILAI KEMBALIAN. Fungsi ini mengembalikan array BARU
+    //   (tidak memutasi `records`) agar analyze() aman dipanggil berulang
+    //   atas array yang sama — lihat catatan idempotensi di fungsi tsb. (B13)
+    records = normalizeExhaustDuty(records);
+
     // [POIN 1] Resolusi profil keluarga produk dari metadata unit.
     var prof = null;
     var thresholds = cfg.THRESHOLDS;
@@ -485,6 +655,33 @@
     var summary = summarize(winRecords);
     var anomalies = buildAnomalies(winRecords, summary, thresholds);
     var health = healthIndex(winRecords);
+
+    /* -------------------------------------------------------------------
+     * [FIX 2026-10-09] LANTAI LABEL dari anomali kritis.
+     * -----------------------------------------------------------------
+     * `healthIndex` menilai PROPORSI record, bukan ada/tidaknya parameter
+     * yang melewati batas kritis. Akibatnya unit dengan 10 record CRITICAL
+     * dari 200 record mendapat skor 96 -> label NORMAL, padahal beberapa
+     * parameter benar-benar melewati batas (terlihat di katalog sebagai
+     * "Normal" dengan "6 anomali (4 kritis)").
+     *
+     * Karena `healthLabel` adalah kunci urut PERTAMA di katalog Home
+     * (compareSeverity), unit berbahaya bisa terdorong ke bawah unit aman.
+     * Di sini label diberi LANTAI berdasarkan jumlah anomali CRITICAL.
+     * Skor numerik (health.score) TIDAK diubah — hanya klasifikasinya.
+     *
+     * ponytail: lantai sederhana, bukan rumus health baru. Bila butuh
+     * gradasi lebih halus, ganti healthIndex jadi skor gabungan
+     * proporsi-record + bobot anomali.
+     * ----------------------------------------------------------------- */
+    if (health) {
+      var nCritAnom = 0;
+      for (var ai = 0; ai < anomalies.length; ai++) {
+        if (anomalies[ai].status === 'CRITICAL') nCritAnom++;
+      }
+      if (nCritAnom >= 2) health.label = 'CRITICAL';
+      else if (nCritAnom === 1 && health.label === 'NORMAL') health.label = 'CAUTION';
+    }
 
     // [RUL] Estimasi sisa umur operasi per parameter (dari window formula)
     var rul = computeAllRUL(winRecords, thresholds);
@@ -817,6 +1014,9 @@
     analyze: analyze,
     stats: stats,
     slope: slope,
+    // [T5.6] Kurva kumulatif untuk parameter bertipe DELTA (TC Oil T.1xx-)
+    cumulative: cumulative,
+    cumulativeTotal: cumulativeTotal,
     evaluateParam: evaluateParam,
     buildChartData: buildChartData,
     hexToRgba: hexToRgba,
@@ -825,7 +1025,10 @@
     mostUrgentRUL: mostUrgentRUL,
     pearson: pearson,
     detectCorrelations: detectCorrelations,
-    buildAlertTimeline: buildAlertTimeline
+    buildAlertTimeline: buildAlertTimeline,
+    // [PC2000 2026-10-10 — T4] Normalisasi duty gas buang -> persen jendela.
+    normalizeExhaustDuty: normalizeExhaustDuty,
+    EXHAUST_DUTY_KEYS: EXHAUST_DUTY_KEYS
   };
 
   if (typeof module !== 'undefined' && module.exports) {

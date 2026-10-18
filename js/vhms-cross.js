@@ -122,7 +122,39 @@
     { vhms: 'boostMax',       sos: 'wear_si',   pillar: 'ENGINE',    weight: 0.6,
       hypothesis: 'Boost anomali + silikon (Si) naik → kebocoran jalur intake (debu masuk)' },
     { vhms: 'boostMax',       sos: 'wear_ni',   pillar: 'ENGINE',    weight: 0.7,
-      hypothesis: 'Boost anomali + nikel (Ni) naik → keausan shaft/bearing turbocharger' }
+      hypothesis: 'Boost anomali + nikel (Ni) naik → keausan shaft/bearing turbocharger' },
+
+    // =====================================================================
+    // [T6 2026-10-08] KORELASI BARU — POWERTRAIN / T/M (D375A)
+    // ---------------------------------------------------------------------
+    // Berbasis hipotesis fisik dari data tm_trend0.CSV (T5). Dua besaran
+    // yang dipakai sebagai pemicu:
+    //   * `tcOilOver130` = akumulasi detik oli T/C di atas 130 °C (duty termal)
+    //   * `tmTrgTimeF`   = clutch fill time arah maju (msec)
+    //
+    // [T6.5] Validasi key SOS dilakukan terhadap `sos-config.js`:
+    //   - wear_fe    ✔ ada
+    //   - oxidation  ✔ ada
+    //   - wear_cu    ✔ ada
+    //   - visc100    ✘ TIDAK ADA -> key yang benar adalah `visc_v100`
+    //     (lihat vhms-cross CURATED_PAIRS yang sudah memakai `visc_v100`).
+    //     Pasangan T6.4 DIPAKSAKAN memakai `visc_v100` agar invarian key
+    //     tetap terjaga; penyimpangan ini dicatat di §5 dokumen spek.
+    // =====================================================================
+
+    // T6.1 — degradasi termal mempercepat keausan clutch/gear
+    { vhms: 'tcOilOver130',   sos: 'wear_fe',   pillar: 'POWERTRAIN', weight: 0.9,
+      hypothesis: 'Durasi oli T/C di atas 130 °C + besi (Fe) naik → degradasi termal mempercepat keausan clutch/gear' },
+    // T6.2 — hubungan sebab-akibat langsung: paparan termal kumulatif vs oksidasi
+    { vhms: 'tcOilOver130',   sos: 'oxidation', pillar: 'POWERTRAIN', weight: 1.0,
+      hypothesis: 'Paparan termal kumulatif + oksidasi oli naik → hubungan sebab-akibat langsung; indikator interval ganti oli perlu diperpendek' },
+    // T6.3 — fill time memanjang = keausan material friksi / bushing
+    { vhms: 'tmTrgTimeF',     sos: 'wear_cu',   pillar: 'POWERTRAIN', weight: 0.8,
+      hypothesis: 'Clutch fill time memanjang + tembaga (Cu) naik → keausan material friksi / bushing' },
+    // T6.4 — PEMBEDA DIAGNOSIS: kebocoran internal akibat oli menipis, BUKAN keausan mekanis.
+    //        Key SOS memakai `visc_v100` (bukan `visc100` yang tidak ada).
+    { vhms: 'tmTrgTimeF',     sos: 'visc_v100', pillar: 'POWERTRAIN', weight: 0.6,
+      hypothesis: 'Fill time memanjang + viskositas (V100) turun → kebocoran internal akibat oli menipis, bukan keausan mekanis. Pembeda diagnosis penting.' }
   ];
 
   /* -----------------------------------------------------------------------
@@ -1021,6 +1053,224 @@
   }
 
   /* -----------------------------------------------------------------------
+   * [T3 2026-10-08] JEMBATAN SUMBU WAKTU  SMR  <->  epoch
+   * ---------------------------------------------------------------------
+   * MASALAH: pada file `fault0.CSV`, `From SMR`/`To SMR` RUSAK (konstan =
+   * SMR saat download), sedangkan `From Time`/`To Time` sah. Pada
+   * `tm_trend0.CSV` justru sebaliknya (SMR sah, `Calendar` tidak sinkron).
+   * Jadi TIDAK ADA satu sumbu bersama yang langsung tersedia.
+   *
+   * SOLUSI: bangun kurva pemetaan dari TREND UTAMA unit yang sama
+   * (dataType '40'), karena hanya file itu yang punya SMR DAN Calendar
+   * sekaligus-sah. Interpolasi linear antar-titik, TANPA ekstrapolasi.
+   * --------------------------------------------------------------------- */
+
+  /** Konversi Calendar sebuah record trend -> epoch DETIK (bukan ms). */
+  function recordEpochSec(rec) {
+    if (!rec || !rec.calendar) return null;
+    var c = rec.calendar;
+    var ep = num(c.epoch);
+    if (ep === null || ep <= 0) return null;
+    return ep;
+  }
+
+  /**
+   * [T3.1] Bangun pemetaan SMR <-> epoch dari record TREND UTAMA.
+   *
+   * Hanya boleh dipanggil dengan records `dataType === '40'`. Pada fault
+   * history SMR-nya rusak, pada tm_trend Calendar-nya tidak sinkron —
+   * keduanya akan menghasilkan pemetaan yang menyesatkan.
+   *
+   * @param {array} trendRecords record trend utama (dataType '40')
+   * @returns {{toSmr:function, toEpoch:function, n:number, smrMin:number,
+   *            smrMax:number, epochMin:number, epochMax:number}|null}
+   *          null bila titik sah < 2 (tidak cukup untuk interpolasi).
+   * --------------------------------------------------------------------- */
+  function buildSmrEpochMap(trendRecords) {
+    var pts = [];
+    (trendRecords || []).forEach(function (r) {
+      if (!r) return;
+      var smr = num(r.smr);
+      var ep = recordEpochSec(r);
+      if (smr === null || ep === null) return;
+      pts.push({ smr: smr, epoch: ep });
+    });
+
+    // Buang epoch duplikat (beberapa record bisa berbagi jam sama) & urutkan
+    // berdasarkan SMR agar pencarian biner & interpolasi benar.
+    var seen = {};
+    pts = pts.filter(function (p) {
+      var k = String(p.smr);
+      if (seen[k]) return false;
+      seen[k] = true;
+      return true;
+    });
+    pts.sort(function (a, b) { return a.smr - b.smr; });
+
+    if (pts.length < 2) return null;
+
+    var smrMin = pts[0].smr, smrMax = pts[pts.length - 1].smr;
+
+    // Sumbu epoch harus MONOTONIK agar toEpoch() tidak ambigu. Bila Calendar
+    // di dalam file trend sendiri mundur (data tak rapi), buang titik yang
+    // melanggar agar interpolasi tetap sehat.
+    var monotonic = [];
+    for (var i = 0; i < pts.length; i++) {
+      if (!monotonic.length || pts[i].epoch >= monotonic[monotonic.length - 1].epoch) {
+        monotonic.push(pts[i]);
+      }
+    }
+    pts = monotonic;
+    if (pts.length < 2) return null;
+
+    var epochMin = pts[0].epoch, epochMax = pts[pts.length - 1].epoch;
+
+    /** Interpolasi linear pada daftar titik yang sudah terurut. */
+    function interp(ptsArr, xKey, yKey, x) {
+      // TANPA EKSTRAPOLASI: di luar rentang -> null.
+      if (x < ptsArr[0][xKey] || x > ptsArr[ptsArr.length - 1][xKey]) return null;
+      // Pencarian biner: cari segmen yang mengapit x.
+      var lo = 0, hi = ptsArr.length - 1;
+      while (hi - lo > 1) {
+        var mid = (lo + hi) >> 1;
+        if (ptsArr[mid][xKey] <= x) lo = mid; else hi = mid;
+      }
+      var a = ptsArr[lo], b = ptsArr[hi];
+      if (x === a[xKey]) return a[yKey];
+      if (x === b[xKey]) return b[yKey];
+      var dx = b[xKey] - a[xKey];
+      if (dx === 0) return a[yKey];
+      var t = (x - a[xKey]) / dx;
+      return a[yKey] + t * (b[yKey] - a[yKey]);
+    }
+
+    return {
+      n: pts.length,
+      smrMin: smrMin,
+      smrMax: smrMax,
+      epochMin: epochMin,
+      epochMax: epochMax,
+      /** epoch (detik) -> SMR. Di luar rentang -> null. */
+      toSmr: function (epoch) {
+        var e = num(epoch);
+        if (e === null) return null;
+        var v = interp(pts, 'epoch', 'smr', e);
+        return v === null ? null : Math.round(v * 100) / 100;
+      },
+      /** SMR -> epoch (detik). Di luar rentang -> null. */
+      toEpoch: function (smr) {
+        var s = num(smr);
+        if (s === null) return null;
+        var v = interp(pts, 'smr', 'epoch', s);
+        return v === null ? null : Math.round(v);
+      }
+    };
+  }
+
+  /**
+   * [T3.2] Isi `fromSmrEst` / `toSmrEst` pada setiap event fault.
+   *
+   * @param {array}  faultEvents event dari VHMS_FAULT_PARSER.parseFault()
+   * @param {object} map         hasil buildSmrEpochMap()
+   * @returns {array} daftar event (objek yang SAMA, dimutasi) dengan:
+   *   - fromSmrEst : SMR sintetis (null bila di luar rentang)
+   *   - toSmrEst   : SMR sintetis (null bila masih aktif / di luar rentang)
+   *   - smrEstimated: true (menandai ke UI bahwa ini hasil estimasi)
+   * @throws {Error} bila `map` null — pesan eksplisit (T3.3).
+   * --------------------------------------------------------------------- */
+  function attachFaultSmr(faultEvents, map) {
+    if (!map || typeof map.toSmr !== 'function') {
+      throw new Error('Perlu file trend utama unit ini untuk menyelaraskan waktu fault.');
+    }
+    (faultEvents || []).forEach(function (ev) {
+      if (!ev) return;
+      ev.fromSmrEst = (ev.fromEpoch !== null && ev.fromEpoch !== undefined)
+        ? map.toSmr(ev.fromEpoch) : null;
+      ev.toSmrEst = (ev.toEpoch !== null && ev.toEpoch !== undefined)
+        ? map.toSmr(ev.toEpoch) : null;
+      ev.smrEstimated = true;
+    });
+    return faultEvents;
+  }
+
+  /**
+   * [T3.3] Guard eksplisit: bangun peta dari analisis VHMS.
+   *
+   * ⚠ TEMUAN PENTING (lihat §5 spek): pada data contoh D375A SN 19559,
+   * sumbu `Calendar` pada `trend0.CSV` (rentang 2011-05 -> 2016-07) TIDAK
+   * beririsan dengan `From Time` fault (2023-05 -> 2026-10), padahal kedua
+   * file berasal dari unit yang SAMA (meta SMR 28812.1 h identik, trend
+   * berakhir hanya 9.5 h di bawah SMR download). Artinya pemetaan epoch
+   * absolut di file contoh ini menjurus MENYESATKAN.
+   *
+   * Karena itu fungsi ini memakai GUARD KOHERENSI TEMPORAL: bila fault
+   * sama sekali tidak beririsan dengan rentang epoch trend, peta TIDAK
+   * dikembalikan dan alasannya disampaikan apa adanya. Ini lebih aman
+   * daripada memaksa SMR sintetis yang salah.
+   *
+   * TIDAK membatasi saat unit tidak punya fault — peta tetap tersedia
+   * untuk pemakaian lain (T5/T6 memakai SMR apa adanya).
+   *
+   * @param {object} analysis    hasil VHMS_ANALYTICS.analyze() (dataType '40')
+   * @param {object} [opts]
+   *   - faultEvents : event fault unit ini (untuk uji koherensi temporal)
+   * @returns {{map:object|null, message:string|null}}
+   * --------------------------------------------------------------------- */
+  function smrEpochMapFor(analysis, opts) {
+    opts = opts || {};
+    var NO_TREND = 'Perlu file trend utama unit ini untuk menyelaraskan waktu fault.';
+    if (!analysis || !analysis.records || !analysis.records.length) {
+      return { map: null, message: NO_TREND };
+    }
+    var map = buildSmrEpochMap(analysis.records);
+    if (!map) {
+      return {
+        map: null,
+        message: NO_TREND + ' (Perlu >= 2 record trend dengan SMR dan Calendar yang sah.)'
+      };
+    }
+
+    // --- Guard koherensi temporal (hanya bila data fault ikut diberikan) ---
+    var evs = opts.faultEvents;
+    if (evs && evs.length) {
+      var lo = null, hi = null;
+      evs.forEach(function (e) {
+        if (!e) return;
+        [e.fromEpoch, e.toEpoch].forEach(function (v) {
+          if (v === null || v === undefined) return;
+          if (lo === null || v < lo) lo = v;
+          if (hi === null || v > hi) hi = v;
+        });
+      });
+      var disjoint = (lo !== null && hi !== null) && (hi < map.epochMin || lo > map.epochMax);
+      if (disjoint) {
+        return {
+          map: null,
+          message: 'Sumbu waktu fault dan trend utama unit ini tidak beririsan ' +
+            '(fault ' + fmtDay(lo) + '–' + fmtDay(hi) + ', trend ' +
+            fmtDay(map.epochMin) + '–' + fmtDay(map.epochMax) + ') sehingga SMR ' +
+            'fault tidak dapat diestimasi dengan aman. Perlu file trend utama ' +
+            'unit ini dengan sumbu Calendar yang sinkron.',
+          disjoint: true,
+          faultRange: { from: lo, to: hi },
+          trendRange: { from: map.epochMin, to: map.epochMax }
+        };
+      }
+    }
+
+    return { map: map, message: null };
+  }
+
+  /** Format epoch detik -> 'YYYY-MM-DD' (untuk pesan). */
+  function fmtDay(epochSec) {
+    if (epochSec === null || epochSec === undefined) return '?';
+    var d = new Date(epochSec * 1000);
+    if (isNaN(d.getTime())) return '?';
+    function p2(n) { return (n < 10 ? '0' : '') + n; }
+    return d.getUTCFullYear() + '-' + p2(d.getUTCMonth() + 1) + '-' + p2(d.getUTCDate());
+  }
+
+  /* -----------------------------------------------------------------------
    * Export
    * --------------------------------------------------------------------- */
   global.VHMS_CROSS = {
@@ -1041,7 +1291,12 @@
     autoTimeBase: autoTimeBase,
     recordTime: recordTime,
     sampleTime: sampleTime,
-    sampleMeter: sampleMeter
+    sampleMeter: sampleMeter,
+    // [T3] Jembatan sumbu waktu SMR <-> epoch
+    buildSmrEpochMap: buildSmrEpochMap,
+    attachFaultSmr: attachFaultSmr,
+    smrEpochMapFor: smrEpochMapFor,
+    recordEpochSec: recordEpochSec
   };
 
   if (typeof module !== 'undefined' && module.exports) {

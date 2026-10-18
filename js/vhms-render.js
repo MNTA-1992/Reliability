@@ -96,7 +96,27 @@
     rExhTempMax:    'R Exh Temp',
     tcOilTempMax:   'T/C Oil Temp',
     tmMainPressMax: 'TM Press',
-    largePumpPress: 'Pump Press'
+    largePumpPress: 'Pump Press',
+    // [T10 2026-10-09] Parameter Chassis Trend HD785 (chas_trend0.CSV).
+    // Tanpa entri di sini, `shortSym()` memotong kata pertama label
+    // ("Low", "1st", "F", "RR") yang TIDAK membedakan fill time dari
+    // duty termal — header heatmap menjadi tidak terbaca.
+    tmFillLow:     'Low Fill',
+    tmFillHigh:    'High Fill',
+    tmFill1:       '1st Fill',
+    tmFill2:       '2nd Fill',
+    tmFill3:       '3rd Fill',
+    tmFill4:       '4th Fill',
+    tmFillR:       'R Fill',
+    tmTrgTimeLow:  'Low Trg',
+    tmTrgTimeHigh: 'High Trg',
+    tmTrgTime4:    '4th Trg',
+    fRtdOver140:   'F RTD >140',
+    rRtdOver140:   'R RTD >140',
+    lfExhOver800:  'LF Exh >800',
+    lrExhOver800:  'LR Exh >800',
+    rfExhOver800:  'RF Exh >800',
+    rrExhOver800:  'RR Exh >800'
   };
 
   /** Simbol singkat header VHMS; fallback: kata pertama label. */
@@ -1352,33 +1372,125 @@
   /* -----------------------------------------------------------------------
    * Tabel log telemetri
    * --------------------------------------------------------------------- */
-  var tableState = { search: '', filter: 'ALL', sortKey: 'smr', sortDir: 'desc' };
+  // [B-1 2026-10-13] `source` = jenis berkas VHMS yang sedang ditampilkan.
+  // '' berarti "pilih otomatis sumber dengan baris terbanyak".
+  var tableState = { search: '', filter: 'ALL', sortKey: 'smr', sortDir: 'desc', source: '' };
   // [D375A] Kolom tabel AKTIF untuk unit yang sedang ditampilkan. Dipilih sesuai
   // keluarga produk (mis. DOZER memakai daftar kolom khusus) & disaring agar
   // hanya kolom yang benar-benar ada datanya. Diisi di renderTable().
   var activeTableColumns = null;
+  // [FIX 2026-10-13] Analisa terakhir yang dirender. Dipakai `renderTableHeader`
+  // saat pemanggil tidak mengirim `analysis` (mis. jalur lama / urutan render
+  // header-dulu). Tanpa ini, header tidak tahu sumber aktif mana yang berlaku.
+  var lastAnalysis = null;
+
+  /* -----------------------------------------------------------------------
+   * [B-1 2026-10-13] SATU UNIT, BEBERAPA JENIS BERKAS.
+   * ---------------------------------------------------------------------
+   * Satu unit dapat menerima record dari berkas VHMS yang BERBEDA STRUKTUR:
+   *   HD785  -> Chassis Trend ('86', 16 parameter mesin)
+   *             + T/M Trend  ('81', 37 parameter powertrain)
+   *   PC2000 -> Trend Analysis ('40') + T/M Trend ('81')
+   *   D375A  -> Trend Analysis ('40') + T/M Trend ('81')
+   * SMR kedua kelompok TIDAK pernah beririsan (terukur: 0 tabrakan dari 324
+   * record HD785), jadi hasil merge BUKAN baris gabungan melainkan dua blok
+   * baris berdampingan. Menampilkannya dalam SATU daftar kolom membuat
+   * mayoritas sel "—": 35 dari 51 kolom HD785 terisi <60 %. Inilah sebab
+   * laporan pengguna "kolom Clutch kosong".
+   *
+   * KEPUTUSAN: tabel menampilkan SATU jenis berkas pada satu waktu, dengan
+   * pemilih sumber. TIDAK menggabungkan baris antar-berkas berdasarkan SMR
+   * terdekat — itu akan MENGARANG keterkaitan antar-pembacaan yang tidak ada
+   * di data (SMR-nya memang berbeda).
+   * --------------------------------------------------------------------- */
+
+  /**
+   * Daftar jenis berkas sumber yang ada pada record unit ini, beserta
+   * jumlah barisnya. Diurutkan dari yang terbanyak.
+   * @param {object} analysis
+   * @returns {{src:string, title:string, n:number}[]}
+   */
+  function tableSources(analysis) {
+    var recs = (analysis && analysis.records) || [];
+    var map = {}, order = [];
+    recs.forEach(function (r) {
+      var s = (r && r._src !== undefined && r._src !== null) ? String(r._src) : '';
+      if (!map[s]) { map[s] = { src: s, title: (r && r._srcTitle) || '', n: 0 }; order.push(s); }
+      map[s].n++;
+    });
+    var out = order.map(function (s) { return map[s]; });
+    out.sort(function (a, b) { return b.n - a.n; });
+    return out;
+  }
+
+  /** Jenis berkas yang SEDANG dipilih (otomatis = yang barisnya terbanyak). */
+  function activeSource(analysis) {
+    var list = tableSources(analysis);
+    if (!list.length) return '';
+    if (tableState.source) {
+      for (var i = 0; i < list.length; i++) {
+        if (list[i].src === tableState.source) return tableState.source;
+      }
+    }
+    return list[0].src;   // sumber dengan baris terbanyak
+  }
+
+  /** Record milik satu jenis berkas saja. */
+  function recordsOfSource(analysis, src) {
+    var recs = (analysis && analysis.records) || [];
+    if (tableSources(analysis).length < 2) return recs;   // satu sumber -> apa adanya
+    return recs.filter(function (r) {
+      var s = (r && r._src !== undefined && r._src !== null) ? String(r._src) : '';
+      return s === src;
+    });
+  }
 
   function currentTableColumns(analysis) {
     if (activeTableColumns) return activeTableColumns;
     var fam = analysis && analysis.familyId;
-    if (cfg.tableColumnsFor) activeTableColumns = cfg.tableColumnsFor(fam, analysis && analysis.records);
-    else activeTableColumns = cfg.TABLE_COLUMNS;
+    // [B-1] Kolom dipilih dari record SUMBER AKTIF saja — bukan seluruh
+    // record unit — agar kolom milik berkas lain tidak ikut tampil kosong.
+    var recs = recordsOfSource(analysis, activeSource(analysis));
+    // [FIX AUDIT 2026-10-13] Sertakan threshold EFEKTIF unit agar penandaan
+    // `colored` tidak memakai gabungan ambang SEMUA model.
+    if (cfg.tableColumnsFor) {
+      activeTableColumns = cfg.tableColumnsFor(fam, recs, analysis && analysis.thresholdSet);
+    } else activeTableColumns = cfg.TABLE_COLUMNS;
     return activeTableColumns;
   }
 
-  function renderTable(analysis) {
-    var tbody = document.getElementById('table-body');
-    if (!tbody) return;
+  /** Reset cache kolom tabel (dipakai saat berganti unit & pada pengujian). */
+  function resetTableColumns() { activeTableColumns = null; }
 
+  /**
+   * Daftar NAMA parameter kolom yang dipakai HEADER, dihitung dari sumber
+   * aktif (murni, tanpa DOM) — dipakai `renderTableHeader()` dan dapat diuji
+   * langsung. Ada agar header & body tidak dapat memakai sumber berbeda.
+   * @param {object} [analysis]
+   * @returns {string[]}
+   */
+  function headerColumnParams(analysis) {
+    var A = analysis || lastAnalysis;
+    var cols = A ? currentTableColumns(A) : (activeTableColumns || cfg.TABLE_COLUMNS);
+    return (cols || []).map(function (c) { return c.param; });
+  }
+
+  /**
+   * [FITUR 2026-10-12] Hitung baris tabel yang SEDANG TAMPIL: menerapkan
+   * filter status + pencarian + urutan yang sama dengan renderTable().
+   * Dipakai bersama oleh renderTable() dan ekspor CSV log telemetri agar
+   * data yang diekspor SAMA PERSIS dengan yang terlihat di layar.
+   * @param {object} analysis
+   * @returns {{cols: object[], rows: object[]}}
+   */
+  function computeTableRows(analysis) {
     var cols = currentTableColumns(analysis);
-    var rows = analysis.records.slice();
+    // [B-1] Hanya baris dari jenis berkas yang sedang dipilih.
+    var rows = recordsOfSource(analysis, activeSource(analysis)).slice();
 
-    // Filter status
     if (tableState.filter !== 'ALL') {
       rows = rows.filter(function (r) { return r.status === tableState.filter; });
     }
-
-    // Pencarian (SMR / tanggal)
     var q = tableState.search.trim().toLowerCase();
     if (q) {
       rows = rows.filter(function (r) {
@@ -1387,27 +1499,159 @@
         return smr.indexOf(q) !== -1 || dt.indexOf(q) !== -1 || r.status.toLowerCase().indexOf(q) !== -1;
       });
     }
-
-    // Urutkan
     var key = tableState.sortKey, dir = tableState.sortDir === 'asc' ? 1 : -1;
+    function sortVal(rec) {
+      if (key === 'calendar') {
+        return (rec.calendar && typeof rec.calendar.epoch === 'number') ? rec.calendar.epoch : null;
+      }
+      return rec[key];
+    }
     rows.sort(function (a, b) {
-      var va = a[key], vb = b[key];
+      var va = sortVal(a), vb = sortVal(b);
       if (va === null || va === undefined) return 1;
       if (vb === null || vb === undefined) return -1;
       if (typeof va === 'number' && typeof vb === 'number') return (va - vb) * dir;
       return String(va).localeCompare(String(vb)) * dir;
     });
+    return { cols: cols, rows: rows };
+  }
+
+  /**
+   * [FITUR 2026-10-12] Bangun CSV LOG TELEMETRI dari data yang SEDANG TAMPIL.
+   * ---------------------------------------------------------------------
+   * Kolom mengikuti model AKTIF (profil keluarga + parameter berdata); baris
+   * mengikuti filter/pencarian/urutan yang aktif — jadi CSV = persis yang
+   * terlihat di layar. Murni (tanpa DOM) supaya dapat diuji.
+   *
+   * [FIX AUDIT 2026-10-13] Nilai ber-mask SENSOR FAULT diekspor apa adanya
+   * (nilai asli dipertahankan, README §6.3) TETAPI kini DISERTAI kolom
+   * penanda `SENSOR FAULT (parameter dikecualikan dari skor)` berisi daftar
+   * parameter yang di-mask pada baris itu. Tanpa kolom ini, konsumen CSV
+   * tidak dapat tahu nilai mana yang TIDAK dihitung dalam skor — padahal di
+   * layar informasi itu tampil sebagai badge.
+   * @param {object} analysis
+   * @returns {{csv:string, filename:string, rows:number, cols:number}|null}
+   */
+  function buildTelemetryCsv(analysis) {
+    if (!analysis) return null;
+    var CSV = global.CSV_UTIL || {};
+    var csvEscape = CSV.csvEscape || function (v) {
+      if (v === null || v === undefined) return '';
+      var s = String(v);
+      return (s.indexOf(';') !== -1 || s.indexOf(',') !== -1 || s.indexOf('"') !== -1 || s.indexOf('\n') !== -1)
+        ? '"' + s.replace(/"/g, '""') + '"' : s;
+    };
+
+    var data = computeTableRows(analysis);
+    var cols = data.cols || [];
+    var rows = data.rows || [];
+
+    function meta(k) { return (cfg.PARAMS && cfg.PARAMS[k]) || null; }
+    function num(v, d) {
+      if (v === null || v === undefined || isNaN(v)) return '';
+      return Number(v).toFixed(d);
+    }
+
+    var header = ['Waktu Rekam (WITA)'];
+    cols.forEach(function (col) {
+      if (col.isStatus) { header.push('Status'); return; }
+      var k = col.param;
+      if (k === 'smr') { header.push('SMR (jam)'); return; }
+      var m = meta(k);
+      var lbl = m ? m.label : k;
+      var unit = m && m.unit ? ' (' + m.unit + ')' : '';
+      header.push(lbl + unit);
+    });
+    header.push('SENSOR FAULT (parameter dikecualikan dari skor)');
+
+    var lines = [header.map(csvEscape).join(';')];
+    rows.forEach(function (r) {
+      var row = [r.calendar ? r.calendar.display : ''];
+      var maskedLabels = [];
+      cols.forEach(function (col) {
+        if (col.isStatus) { row.push(r.status || ''); return; }
+        var k = col.param;
+        if (r._masked && r._masked[k]) {
+          var mm = meta(k);
+          maskedLabels.push(mm ? mm.label : k);
+        }
+        // [FIX AUDIT 2026-10-13] `String(r.smr)` membocorkan galat floating
+        // point ke berkas: SMR 28.056,3 keluar sebagai "28056.300000000003".
+        // SMR punya 1 desimal (0,1 jam) — bulatkan sesuai itu.
+        if (k === 'smr') { row.push(num(r.smr, 1)); return; }
+        var m = meta(k);
+        row.push(num(r[k], m ? m.decimals : 1));
+      });
+      row.push(maskedLabels.join(', '));
+      lines.push(row.map(csvEscape).join(';'));
+    });
+
+    var csv = '\uFEFF' + lines.join('\r\n');
+    var d = new Date();
+    function p(n) { return (n < 10 ? '0' : '') + n; }
+    var stamp = String(d.getFullYear()) + p(d.getMonth() + 1) + p(d.getDate()) + '-' + p(d.getHours()) + p(d.getMinutes());
+    var serial = (analysis.meta && analysis.meta.serial) ? String(analysis.meta.serial) : '';
+    var model = (analysis.meta && analysis.meta.model) ? String(analysis.meta.model) : '';
+    var tag = [model, serial].filter(Boolean).join(' ') || 'Unit';
+    tag = tag.replace(/[\/\\:*?"<>|]/g, '-').trim();
+    return { csv: csv, filename: 'Telemetry Log_' + tag + '_' + stamp + '.csv', rows: rows.length, cols: cols.length };
+  }
+
+  function renderTable(analysis) {
+    var tbody = document.getElementById('table-body');
+    if (!tbody) return;
+    lastAnalysis = analysis;
+
+    // [HD785/PC2000 2026-10-12] Pewarnaan sel WAJIB memakai threshold EFEKTIF
+    // unit (analysis.thresholdSet = profil keluarga + MODEL_THRESHOLDS),
+    // bukan cfg.THRESHOLDS global. Sebelum ini sel tabel diwarnai dengan
+    // ambang base sehingga badge status baris (yang memakai thresholdSet)
+    // dan warna sel dapat TIDAK sinkron (mis. boost HD785-7 warn 1200 vs base
+    // 1125,1). Satu sumber kebenaran = thresholdSet.
+    var TH = (analysis && analysis.thresholdSet) || cfg.THRESHOLDS;
+
+    // Filter + pencarian + urutan (SATU hitungan, dibagi dengan ekspor CSV).
+    var data = computeTableRows(analysis);
+    var cols = data.cols;
+    var rows = data.rows;
+    // [B-1] Baris milik jenis berkas yang sedang dipilih (sebelum filter).
+    var srcRecords = recordsOfSource(analysis, activeSource(analysis));
 
     if (!rows.length) {
       tbody.innerHTML = '<tr><td colspan="' + (cols.length + 1) +
         '" class="center" style="padding:30px;color:var(--text-mute)">Tidak ada data yang cocok dengan filter.</td></tr>';
-      updateTableCount(0, analysis.records.length);
+      // [FIX AUDIT 2026-10-13] Sertakan `filtered = 0` agar pesan berbunyi
+      // "0 dari 0 record terfilter (total N)" — bukan "0 dari N record" yang
+      // menyesatkan (seolah seluruh N record kosong).
+      updateTableCount(0, srcRecords.length, 0);
+      renderTableSources(analysis);
       return;
     }
 
-    // Batasi render maksimum agar UI tetap responsif pada dataset besar
-    var MAX = 400;
-    var limited = rows.slice(0, MAX);
+    // [REVISI 2026-10-12 · DIUKUR 2026-10-13] TAMPILKAN SEMUA BARIS (utuh).
+    // ---------------------------------------------------------------------
+    // Sebelumnya dibatasi `MAX = 400` baris sehingga unit dengan riwayat
+    // panjang TERPOTONG di baris 400 (mis. SMR & record di bawahnya tidak
+    // pernah terlihat). Permintaan pengguna: seluruh data log telemetri
+    // harus muncul utuh. Karena tabel sudah punya `max-height` + scroll
+    // vertikal, merender seluruh baris tidak memanjangkan halaman.
+    //
+    // PENGUKURAN (kasus TERBURUK: 90 kolom — seluruh PARAMS punya data;
+    // berkas contoh nyata = 324 baris × 52 kolom):
+    //   1.000 baris =  90.000 sel |  36 ms |  4,6 MB HTML
+    //   2.000 baris = 180.000 sel |  70 ms |  9,3 MB HTML
+    //   5.000 baris = 450.000 sel | 159 ms | 23,2 MB HTML
+    //  10.000 baris = 900.000 sel | 405 ms | 46,4 MB HTML
+    // Angka di atas hanya biaya penggabungan string; parsing innerHTML +
+    // layout browser menambah beberapa kali lipat. Batas dipilih pada
+    // SAFETY_CELLS (bukan jumlah baris) karena BIAYA = baris × kolom:
+    // 2.000 baris × 90 kolom sama mahalnya dengan 17.000 baris × 10 kolom.
+    // Bila batas terpakai, pengguna DIBERI TAHU (lihat updateTableCount),
+    // BUKAN dipotong diam-diam.
+    var SAFETY_CELLS = 180000;                 // ~70 ms string build (terukur)
+    var SAFETY_MAX = Math.max(400, Math.floor(SAFETY_CELLS / Math.max(1, cols.length)));
+    var truncated = rows.length > SAFETY_MAX;
+    var limited = truncated ? rows.slice(0, SAFETY_MAX) : rows;
     var html = '';
 
     limited.forEach(function (r) {
@@ -1429,53 +1673,156 @@
         var val = r[key];
         var cls = 'mono ' + (col.align || '');
         var style = '';
+        var titleAttr = '';
         if (col.colored && val !== null) {
-          var st = global.VHMS_ANALYTICS.evaluateParam(key, val);
+          var st = global.VHMS_ANALYTICS.evaluateParam(key, val, TH);
+          // [FIX AUDIT 2026-10-13] `st === null` berarti parameter ini TIDAK
+          // PUNYA AMBANG pada threshold efektif unit ini (mis. kolom
+          // auto-append yang ambangnya cuma ada di MODEL_THRESHOLDS model
+          // lain). Sebelumnya kasus itu jatuh ke `else` dan sel diwarnai
+          // PUTIH-NORMAL — pembaca menyimpulkan "sudah dievaluasi, aman",
+          // padahal belum dievaluasi sama sekali. Kini dibiarkan netral
+          // (tanpa gaya) + tooltip penjelas.
+          if (st === null) {
+            titleAttr = ' title="Tidak ada ambang untuk parameter ini pada model/keluarga unit ini \u2014 nilai TIDAK dievaluasi."';
+          }
           // [STANDARISASI 2026-10-03] 3 level konsisten dgn badge status:
           // CRITICAL=merah, CAUTION=amber, NORMAL=putih.
-          if (st === 'CRITICAL') style = 'color:#f87171;font-weight:700';
+          else if (st === 'CRITICAL') style = 'color:#f87171;font-weight:700';
           else if (st === 'CAUTION' || st === 'WARNING') style = 'color:#fbbf24;font-weight:700';
           else style = 'color:#e2e8f0';
         }
-        html += '<td class="' + cls + '" style="' + style + '">' + fmt(val, meta.decimals) + '</td>';
+        // [T2.5] Penanda SENSOR FAULT: nilai TETAP TAMPIL (aturan dua sumber
+        // data README §6.3) tetapi diberi gaya *muted* + badge + tooltip
+        // berisi alasan, karena parameter ini DIKELUARKAN dari formula skor.
+        var masked = !!(r._masked && r._masked[key]);
+        if (masked) {
+          var info = (analysis.faultMask && analysis.faultMask[key]) || {};
+          var tip = 'SENSOR FAULT — ' + (info.reason || info.msg || key) +
+            (info.code ? ' (' + info.code + ')' : '') +
+            '. Nilai tetap ditampilkan tetapi TIDAK dihitung dalam skor.';
+          html += '<td class="' + cls + ' cell-masked" style="' + style + '" title="' + esc(tip) + '">' +
+            fmt(val, meta.decimals) +
+            ' <span class="sensor-fault-tag">SENSOR FAULT</span></td>';
+          return;
+        }
+        html += '<td class="' + cls + '" style="' + style + '"' + titleAttr + '>' + fmt(val, meta.decimals) + '</td>';
       });
       html += '</tr>';
     });
 
     tbody.innerHTML = html;
-    updateTableCount(limited.length, analysis.records.length, rows.length);
+    // [B-1] Total = baris pada SUMBER AKTIF (bukan seluruh record unit), agar
+    // "x dari y" bermakna. Jumlah lintas-sumber dijelaskan renderTableSources.
+    updateTableCount(limited.length, srcRecords.length, rows.length, truncated, SAFETY_MAX);
+    renderTableSources(analysis);
   }
 
-  function updateTableCount(shown, total, filtered) {
+  /* -----------------------------------------------------------------------
+   * [B-1 2026-10-13] Pemilih JENIS BERKAS di atas tabel log.
+   * ---------------------------------------------------------------------
+   * Hanya muncul bila unit memang punya lebih dari satu jenis berkas.
+   * Unit satu-berkas (mayoritas) tidak melihat perubahan apa pun.
+   * --------------------------------------------------------------------- */
+  function renderTableSources(analysis) {
+    var sel = document.getElementById('table-source');
+    if (!sel) return;
+    var list = tableSources(analysis);
+    if (list.length < 2) { sel.classList.add('hidden'); sel.innerHTML = ''; return; }
+    var active = activeSource(analysis);
+    sel.innerHTML = list.map(function (s) {
+      var label = s.title || (s.src ? 'Tipe ' + s.src : 'Tanpa tipe');
+      return '<option value="' + esc(s.src) + '"' + (s.src === active ? ' selected' : '') + '>' +
+        esc(label) + ' (' + s.n + ' baris)</option>';
+    }).join('');
+    sel.classList.remove('hidden');
+    sel.title = 'Unit ini punya ' + list.length + ' jenis berkas VHMS dengan struktur kolom ' +
+      'berbeda. Barisnya TIDAK digabung karena SMR-nya berbeda — pilih satu untuk ditampilkan.';
+  }
+
+  function updateTableCount(shown, total, filtered, truncated, safetyMax) {
     var el = document.getElementById('table-count');
     if (!el) return;
+    var msg;
     if (filtered === undefined) {
-      el.textContent = 'Menampilkan ' + shown + ' dari ' + total + ' record';
+      msg = 'Menampilkan ' + shown + ' dari ' + total + ' record';
     } else {
-      el.textContent = 'Menampilkan ' + shown + ' dari ' + filtered + ' record terfilter (total ' + total + ')';
+      msg = 'Menampilkan ' + shown + ' dari ' + filtered + ' record terfilter (total ' + total + ')';
     }
+    // [REVISI 2026-10-12] Bila batas pengaman terpakai, katakan TERBUKA —
+    // jangan biarkan pengguna mengira itu seluruh data. Ekspor CSV TIDAK
+    // dibatasi, jadi tunjukkan jalan keluarnya.
+    if (truncated) {
+      msg += ' — dibatasi ' + safetyMax + ' baris demi performa browser; ' +
+        'persempit dengan filter/pencarian, atau pakai "Export Data" (CSV memuat SEMUA baris).';
+    }
+    el.textContent = msg;
   }
 
   function setTableState(patch) {
+    // [FIX 2026-10-13] Ganti SUMBER harus membatalkan cache kolom: header
+    // tabel dibangun dari `activeTableColumns`, sedangkan baris dibangun live
+    // dari sumber aktif. Tanpa pembatalan, header tetap milik sumber lama
+    // sehingga judul kolom dan isinya TIDAK sinkron (terbukti di browser).
+    var srcChanged = Object.prototype.hasOwnProperty.call(patch, 'source');
     Object.keys(patch).forEach(function (k) { tableState[k] = patch[k]; });
+    if (srcChanged) resetTableColumns();
   }
 
   /* -----------------------------------------------------------------------
    * Header tabel (dinamis dari konfigurasi)
    * --------------------------------------------------------------------- */
-  function renderTableHeader() {
+  function renderTableHeader(analysis) {
     var thead = document.getElementById('table-head');
     if (!thead) return;
-    var cols = activeTableColumns || cfg.TABLE_COLUMNS;
-    var th = '<tr><th scope="col">Waktu Rekam (WITA)</th>';
+    // [FIX 2026-10-13] Header WAJIB memakai kolom SUMBER AKTIF yang dihitung
+    // segar, bukan `activeTableColumns` warisan. Sebelumnya urutan
+    // `renderTableHeader()` lalu `renderTable()` membuat header membaca cache
+    // yang baru saja dikosongkan → jatuh ke `cfg.TABLE_COLUMNS` generik,
+    // sehingga judul kolom & isi baris TIDAK sinkron saat ganti jenis berkas
+    // (terbukti di browser). `analysis` opsional agar pemanggil lama tetap
+    // jalan; `lastAnalysis` dipakai bila tidak diberikan.
+    var A = analysis || lastAnalysis;
+    var cols = A ? currentTableColumns(A) : (activeTableColumns || cfg.TABLE_COLUMNS);
+    // [FITUR 2026-10-12] SORTIR DI HEADER TABEL.
+    // ---------------------------------------------------------------------
+    // Setiap <th> diberi `data-sort` (kunci param) + panah arah bila aktif,
+    // sehingga pengguna dapat mengurutkan dengan mengklik judul kolom.
+    // Klik ditangani lewat EVENT DELEGATION di vhms-app.js (`#table-head`)
+    // karena header di-generate ulang setiap render.
+    // Kolom tanggal ("Waktu Rekam") memakai kunci `calendar`.
+    var sk = tableState.sortKey, sd = tableState.sortDir;
+    function arrow(key) {
+      if (key !== sk) return '<span class="sort-ind" aria-hidden="true">\u21C5</span>';
+      return '<span class="sort-ind active" aria-hidden="true">' +
+        (sd === 'asc' ? '\u25B2' : '\u25BC') + '</span>';
+    }
+    function ariaSort(key) {
+      if (key !== sk) return 'none';
+      return (sd === 'asc') ? 'ascending' : 'descending';
+    }
+    var th = '<tr><th scope="col" class="sortable" data-sort="calendar" ' +
+      'tabindex="0" role="button" aria-sort="' + ariaSort('calendar') + '">Waktu Rekam (WITA) ' + arrow('calendar') + '</th>';
     cols.forEach(function (col) {
       var key = col.param;
       var label, unit;
       if (col.isStatus) { label = 'Status'; unit = ''; }
       else if (key === 'smr') { label = 'SMR'; unit = 'jam'; }
       else { var meta = paramMeta(key); label = meta.label; unit = meta.unit; }
-      th += '<th scope="col" class="' + (col.align || '') + '">' + esc(label) +
-        (unit ? ' <span style="opacity:.6">(' + esc(unit) + ')</span>' : '') + '</th>';
+      // Kolom Status TIDAK dapat diurutkan secara bermakna (kata), biarkan biasa.
+      if (col.isStatus) {
+        th += '<th scope="col" class="' + (col.align || '') + '">' + esc(label) + '</th>';
+        return;
+      }
+      // [FIX AUDIT 2026-10-13] Panah urut ditaruh SEBELUM span satuan.
+      // Span satuan sengaja `display:block` (menurunkan satuan ke baris ke-2);
+      // apa pun yang berada SESUDAHNYA terdorong ke baris ke-3 — walau panahnya
+      // sendiri `display:inline`. Terukur di browser: offset panah terhadap
+      // label 30 px (baris terpisah) -> 3 px (sebaris) setelah urutan ditukar.
+      th += '<th scope="col" class="sortable ' + (col.align || '') + '" data-sort="' + esc(key) + '" ' +
+        'tabindex="0" role="button" aria-sort="' + ariaSort(key) + '">' + esc(label) +
+        ' ' + arrow(key) +
+        (unit ? '<span style="opacity:.6">(' + esc(unit) + ')</span>' : '') + '</th>';
     });
     th += '</tr>';
     thead.innerHTML = th;
@@ -1484,6 +1831,569 @@
   /* -----------------------------------------------------------------------
    * Tampilkan seluruh dashboard
    * --------------------------------------------------------------------- */
+  /* -----------------------------------------------------------------------
+   * [T4.5 / T2.5 2026-10-08] Panel RIWAYAT EVENT/ALARM + gerbang kualitas data.
+   * ---------------------------------------------------------------------
+   * Ditampilkan hanya bila unit ini punya riwayat fault (opt-in by data
+   * availability). Dua bagian:
+   *   1) gerbang kualitas data — parameter mana yang dikecualikan & kenapa,
+   *   2) tabel event terurut Count desc (top 15) + penanda masih aktif.
+   * --------------------------------------------------------------------- */
+  /* -----------------------------------------------------------------------
+   * [FITUR 2026-10-09] State paginasi tabel RIWAYAT EVENT / ALARM.
+   * ---------------------------------------------------------------------
+   * page     : halaman aktif (1..pageCount).
+   * pageSize : jumlah baris per halaman (dapat disesuaikan).
+   * Dipakai oleh renderFaultPanel() & handler klik `data-fault-page`.
+   *
+   * [FITUR 2026-10-11] Ditambah:
+   *   filter   : teks pencarian pada kolom Keterangan (case-insensitive).
+   *   sortKey  : kolom yang diurutkan ('date' | 'code' | 'msg' | 'count' |
+   *              'status' | 'month').
+   *   sortDir  : 'asc' | 'desc'.
+   * DEFAULT: urut TANGGAL KEJADIAN terbaru di atas (date desc) — permintaan
+   * operator agar kejadian terkini langsung terlihat tanpa klik header.
+   * --------------------------------------------------------------------- */
+  var faultState = {
+    page: 1, pageSize: 10, unitId: null,
+    filter: '', sortKey: 'date', sortDir: 'desc'
+  };
+
+  /**
+   * Format tanggal kejadian `dd/mm/yyyy` dari epoch.
+   * Mengembalikan '' bila epoch tidak valid.
+   * @param {number|null} epoch detik Unix
+   * @returns {string}
+   */
+  function faultDateOnly(epoch) {
+    if (epoch === null || epoch === undefined || epoch <= 0) return '';
+    var d = new Date(epoch * 1000);
+    if (isNaN(d.getTime())) return '';
+    function p2(n) { return (n < 10 ? '0' : '') + n; }
+    return p2(d.getUTCDate()) + '/' + p2(d.getUTCMonth() + 1) + '/' + d.getUTCFullYear();
+  }
+
+  /**
+   * [FITUR 2026-10-11] Urutkan daftar event fault sesuai state kolom aktif.
+   * Selalu mengembalikan SALINAN agar data internal store tidak diubah.
+   * Kunci pengurutan:
+   *   date   : fromEpoch (fallback 0) — kejadian terbaru lebih besar.
+   *   code   : kode fault (alfanumerik, case-insensitive).
+   *   msg    : keterangan fault.
+   *   count  : jumlah kejadian.
+   *   status : aktif dianggap "lebih baru/berat" (aktif dulu bila desc).
+   *   month  : label bulan (YYYY-MM) — hanya untuk data ter-agregat.
+   * @param {array} events
+   * @returns {array}
+   */
+  function sortFaultEvents(events) {
+    var k = faultState.sortKey || 'date';
+    var dir = faultState.sortDir === 'asc' ? 1 : -1;
+    var copy = events.slice();
+    copy.sort(function (a, b) {
+      var va, vb;
+      if (k === 'date') {
+        va = a.fromEpoch || 0; vb = b.fromEpoch || 0;
+      } else if (k === 'code') {
+        va = String(a.code || '').toLowerCase(); vb = String(b.code || '').toLowerCase();
+      } else if (k === 'msg') {
+        va = String(a.msg || '').toLowerCase(); vb = String(b.msg || '').toLowerCase();
+      } else if (k === 'count') {
+        va = a.count || 0; vb = b.count || 0;
+      } else if (k === 'status') {
+        va = a.active ? 1 : 0; vb = b.active ? 1 : 0;
+      } else if (k === 'month') {
+        va = String(a.month || ''); vb = String(b.month || '');
+      } else {
+        va = a.fromEpoch || 0; vb = b.fromEpoch || 0;
+      }
+      if (typeof va === 'number' && typeof vb === 'number') return (va - vb) * dir;
+      return String(va).localeCompare(String(vb)) * dir;
+    });
+    return copy;
+  }
+
+  /** [FITUR 2026-10-11] Ikon indikator urutan untuk sebuah header kolom. */
+  function faultSortIcon(key) {
+    if (faultState.sortKey !== key) return '<i class="th-sort-ico fa-solid fa-sort"></i>';
+    return faultState.sortDir === 'asc'
+      ? '<i class="th-sort-ico is-active fa-solid fa-sort-up"></i>'
+      : '<i class="th-sort-ico is-active fa-solid fa-sort-down"></i>';
+  }
+
+  function renderFaultPanel() {
+    var box = document.getElementById('fault-panel');
+    if (!box) return;
+    var store = global.VHMS_FLEET;
+    var app = global.VHMS_APP;
+    var unitId = (app && typeof app.getCurrentUnitId === 'function') ? app.getCurrentUnitId() : null;
+    if (!store || !unitId || typeof store.getFaultSummary !== 'function') { box.innerHTML = ''; box.classList.add('hidden'); return; }
+
+    var summary = store.getFaultSummary(unitId);
+    var events = store.getFaultEvents(unitId);
+    if (!summary || !events.length) { box.innerHTML = ''; box.classList.add('hidden'); return; }
+
+    // [FITUR 2026-10-09] Reset halaman ke 1 saat unit berganti, agar tidak
+    // "nyangkut" di halaman tinggi milik unit sebelumnya.
+    if (faultState.unitId !== unitId) { faultState.unitId = unitId; faultState.page = 1; }
+
+    var maskReport = store.getMaskReport(unitId);
+    var notice = store.getSmrEpochNotice(unitId);
+    var top = summary.topCode;
+
+    var html = '<h2 class="panel-title"><i class="fa-solid fa-triangle-exclamation" style="color:#f97316"></i> Riwayat Event / Alarm</h2>';
+
+    // --- 1) Gerbang kualitas data (T2) ---
+    if (maskReport && maskReport.maskCount) {
+      var unfit = !!maskReport.wholeUnitMasked;
+      html += '<div class="fault-gate' + (unfit ? ' fault-gate--unfit' : '') + '">' +
+        '<div class="fault-gate-title">' +
+          '<i class="fa-solid fa-shield-halved"></i> ' +
+          (unfit ? 'DATA TIDAK LAYAK' : (maskReport.maskCount + ' parameter dikecualikan dari skor')) +
+        '</div>';
+      if (unfit) {
+        html += '<p class="fault-gate-note">Kegagalan sistem VHMS/komunikasi terdeteksi. ' +
+          'Unit ini <strong>tidak layak diberi skor</strong> — 0 akan terbaca sebagai "sehat", ' +
+          'sehingga status ditampilkan sebagai data tidak layak.</p>';
+      }
+      html += '<ul class="fault-gate-list">';
+      maskReport.warnings.forEach(function (w) {
+        html += '<li>' + esc(w) + '</li>';
+      });
+      html += '</ul></div>';
+    }
+
+    // --- 2) Ringkasan angka ---
+    html += '<div class="fault-kpi">' +
+      faultKpiBox('Event', fmtInt(summary.eventCount), 'total baris kejadian') +
+      faultKpiBox('Recurrence', fmtInt(summary.recurrence), 'total Count') +
+      faultKpiBox('Aktif', fmtInt(summary.activeCount), 'belum pulih') +
+      faultKpiBox('Kode Unik', fmtInt(summary.distinctCodes), 'jenis fault') +
+      (summary.eventDensity !== null ? faultKpiBox('Density', fmt(summary.eventDensity, 1), 'per 1000 jam') : '') +
+      '</div>';
+
+    if (top) {
+      html += '<p class="fault-top">Fault terbanyak: <strong>' + esc(top.code) + '</strong> — ' +
+        esc(top.msg) + ' <span class="u-text-mute">(' + fmtInt(top.count) + ' kejadian)</span></p>';
+    }
+    if (notice) {
+      html += '<p class="fault-notice"><i class="fa-solid fa-circle-info"></i> ' + esc(notice) + '</p>';
+    }
+
+    // --- 3) Tabel event (ber-halaman, dapat disaring & diurutkan via header) ---
+    // [FITUR 2026-10-09] Tambah kolom "Tanggal Kejadian" (dd/mm/yyyy) + paginasi.
+    // [FITUR 2026-10-11] Tambah filter kolom "Keterangan" (teks) + sort klik
+    // header (default: TANGGAL KEJADIAN terbaru di atas).
+    var wasAgg = events.length && events[0]._aggregated;
+
+    // Filter kolom Keterangan (contains, case-insensitive). Kode juga
+    // disertakan agar operator dapat mencari "DGT6KB" sekaligus "Exhaust".
+    var q = (faultState.filter || '').trim().toLowerCase();
+    var filtered = events;
+    if (q) {
+      filtered = events.filter(function (e) {
+        return ((e.msg || '') + ' ' + (e.code || '')).toLowerCase().indexOf(q) !== -1;
+      });
+    }
+
+    // Urutkan sesuai state (default: tanggal kejadian desc = terbaru dulu).
+    var sorted = sortFaultEvents(filtered);
+    var totalRows = sorted.length;
+
+    var pageSize = faultState.pageSize || 10;
+    var pageCount = Math.max(1, Math.ceil(totalRows / pageSize));
+    var page = Math.min(Math.max(1, faultState.page || 1), pageCount);
+    faultState.page = page;
+    var pageEvents = sorted.slice((page - 1) * pageSize, page * pageSize);
+
+    // Header kolom dapat diklik untuk mengurutkan (data-fault-sort = kunci).
+    function fTh(key, label, cls, title) {
+      return '<th scope="col" class="fault-th' + (cls ? ' ' + cls : '') + '" ' +
+        'data-fault-sort="' + key + '" role="button" tabindex="0" aria-sort="' +
+          (faultState.sortKey === key ? (faultState.sortDir === 'asc' ? 'ascending' : 'descending') : 'none') + '"' +
+        (title ? ' title="' + esc(title) + '"' : '') + '>' +
+        esc(label) + ' ' + faultSortIcon(key) + '</th>';
+    }
+
+    html += '<div class="table-scroll" style="margin-top:10px"><table class="data fault-table">' +
+      '<caption class="sr-only">Riwayat event fault ber-halaman, dapat disaring pada kolom keterangan dan diurutkan per kolom</caption><thead><tr>' +
+      '<th scope="col" class="fault-th" data-fault-sort="code" role="button" tabindex="0" aria-sort="' +
+        (faultState.sortKey === 'code' ? (faultState.sortDir === 'asc' ? 'ascending' : 'descending') : 'none') + '">' +
+        'Kode ' + faultSortIcon('code') + '</th>' +
+      '<th scope="col" class="fault-th fault-th--msg" data-fault-sort="msg" role="button" tabindex="0" aria-sort="' +
+        (faultState.sortKey === 'msg' ? (faultState.sortDir === 'asc' ? 'ascending' : 'descending') : 'none') + '">' +
+        '<span class="fault-th-inner">' +
+          '<span class="fault-th-label">Keterangan ' + faultSortIcon('msg') + '</span>' +
+          '<span class="fault-col-filter"><i class="fa-solid fa-magnifying-glass"></i>' +
+          '<input type="search" class="fault-filter-input" data-fault-filter="msg" ' +
+            'placeholder="Filter…" value="' + esc(faultState.filter || '') + '" ' +
+            'autocomplete="off" spellcheck="false" aria-label="Filter kolom keterangan"></span>' +
+        '</span></th>' +
+      fTh('date', 'Tanggal Kejadian', 'center') +
+      fTh('count', 'Count', 'center') +
+      fTh('status', 'Status', 'center') +
+      (wasAgg ? fTh('month', 'Bulan', 'center') : '') +
+      '</tr></thead><tbody>';
+
+    if (!pageEvents.length) {
+      html += '<tr><td colspan="' + (wasAgg ? 6 : 5) + '" class="center" ' +
+        'style="padding:22px;color:var(--text-mute)">' +
+        (q ? 'Tidak ada keterangan yang cocok dengan filter "' + esc(faultState.filter.trim()) + '".'
+           : 'Tidak ada baris kejadian.') + '</td></tr>';
+    } else {
+      pageEvents.forEach(function (e) {
+        // Tanggal kejadian: dd/mm/yyyy dari fromEpoch. Bila ada rentang
+        // (fromDisplay/toDisplay) tampilkan sebagai tooltip agar tetap ringkas.
+        var dateStr = faultDateOnly(e.fromEpoch) || esc(e.month || '—');
+        var dateTitle = '';
+        if (e.fromDisplay || e.toDisplay) {
+          dateTitle = 'Dari ' + (e.fromDisplay || '—') + ' s/d ' + (e.active ? 'masih aktif' : (e.toDisplay || '—'));
+        }
+        html += '<tr>' +
+          '<td class="mono">' + esc(e.code || '—') + '</td>' +
+          '<td>' + esc(e.msg || '—') + '</td>' +
+          '<td class="center mono"' + (dateTitle ? ' title="' + esc(dateTitle) + '"' : '') + '>' + dateStr + '</td>' +
+          '<td class="center mono">' + fmtInt(e.count) + '</td>' +
+          '<td class="center">' + (e.active
+            ? '<span class="badge CRITICAL">AKTIF</span>'
+            : '<span class="u-text-mute">pulih</span>') + '</td>' +
+          (wasAgg ? '<td class="center mono">' + esc(e.month || '—') + '</td>' : '') +
+          '</tr>';
+      });
+    }
+    html += '</tbody></table></div>';
+
+    if (pageCount > 1) {
+      html += '<div class="table-pager" id="fault-pager">' +
+        '<span class="tp-info">Baris ' + (((page - 1) * pageSize) + 1) + '–' +
+          Math.min(page * pageSize, totalRows) + ' dari ' + totalRows +
+          (q ? ' (terfilter dari ' + events.length + ')' : '') + '</span>';
+      var startP = Math.max(1, page - 2), endP = Math.min(pageCount, startP + 4);
+      startP = Math.max(1, endP - 4);
+      function fBtn(p, label, disabled, active) {
+        return '<button class="tp-btn' + (active ? ' is-active' : '') + '" data-fault-page="' + p + '"' +
+          (disabled ? ' disabled' : '') + '>' + label + '</button>';
+      }
+      html += fBtn(1, '«', page === 1) + fBtn(page - 1, '‹', page === 1);
+      for (var fp = startP; fp <= endP; fp++) html += fBtn(fp, String(fp), false, fp === page);
+      html += fBtn(page + 1, '›', page === pageCount) + fBtn(pageCount, '»', page === pageCount);
+      html += '</div>';
+    } else {
+      html += '<div class="table-pager" id="fault-pager"><span class="tp-info">' +
+        totalRows + ' baris' + (q ? ' (terfilter dari ' + events.length + ')' : '') +
+        (wasAgg ? ' (ter-agregat per bulan)' : '') + '</span></div>';
+    }
+
+    box.innerHTML = html;
+    box.classList.remove('hidden');
+  }
+
+  /** Kotak KPI kecil untuk panel fault. */
+  function faultKpiBox(label, value, sub) {
+    return '<div class="fault-kpi-box"><span class="fault-kpi-label">' + esc(label) + '</span>' +
+      '<span class="fault-kpi-value">' + esc(value) + '</span>' +
+      '<span class="fault-kpi-sub">' + esc(sub) + '</span></div>';
+  }
+
+  /* -----------------------------------------------------------------------
+   * [T10.3 2026-10-09] PANEL MATRIKS BEBAN CLUTCH (HD785)
+   * ---------------------------------------------------------------------
+   * Menampilkan `clutch_slip.CSV` (DA) dan `clutch_therm.CSV` (D9) sebagai
+   * heatmap: baris = 7 posisi clutch, kolom = AREA 3..6.
+   *
+   * [ISTILAH 2026-10-13] Kolom disebut AREA (bukan "bin") karena berkas
+   * Komatsu sendiri menamai sumbu-X-nya "Slip time area" / "Clutch area".
+   * Judul sumbu asli dibaca dari berkas dan ditampilkan di tabel, sehingga
+   * pembaca tahu "Area 3" itu area APA.
+   *
+   * PRINSIP YANG DIPATUHI (spek §2 D8 & R3-HD):
+   *   1. Area 0-2 TIDAK ditampilkan — hampir semuanya bersaturasi pada semua
+   *      posisi (termasuk yang sehat) sehingga nol informasi pembeda.
+   *   2. Sel bersaturasi (65535) diberi badge ">=". Angka  65535 BUKAN nilai
+   *      sebenarnya, ia berarti ">= 65535". Menampilkannya sebagai angka
+   *      pasti akan menyesatkan.
+   *   3. Skor posisi bersaturasi dilaporkan sebagai BATAS BAWAH.
+   *   4. Panel hanya muncul bila unit MEMANG punya matriks (opt-in by data),
+   *      sama seperti panel fault.
+   * --------------------------------------------------------------------- */
+  var CLUTCH_POS_LABEL = {
+    Low: 'Low', High: 'High', Rev: 'Rev',
+    '1st': '1st', '2nd': '2nd', '3rd': '3rd', '4th': '4th'
+  };
+
+  /** Warna sel heatmap dari intensitas relatif (0..1) — hijau -> merah. */
+  function clutchCellColor(count, maxCount) {
+    if (count === null || count === undefined || isNaN(count)) return 'rgba(148,163,184,0.10)';
+    if (!maxCount || maxCount <= 0) return 'rgba(148,163,184,0.10)';
+    var t = Math.min(1, count / maxCount);
+    // 4 tahap agar mudah dibaca (bukan gradien mulus yang sulit dibedakan).
+    if (t === 0) return 'rgba(148,163,184,0.12)';
+    if (t < 0.25) return 'rgba(34,197,94,0.30)';
+    if (t < 0.50) return 'rgba(234,179,8,0.45)';
+    if (t < 0.75) return 'rgba(249,115,22,0.60)';
+    return 'rgba(239,68,68,0.75)';
+  }
+
+  function renderClutchPanel() {
+    var box = document.getElementById('clutch-panel');
+    if (!box) return;
+    var store = global.VHMS_FLEET;
+    var app = global.VHMS_APP;
+    var unitId = (app && typeof app.getCurrentUnitId === 'function') ? app.getCurrentUnitId() : null;
+    if (!store || !unitId || typeof store.getClutchMatrix !== 'function') {
+      box.innerHTML = ''; box.classList.add('hidden'); return;
+    }
+
+    var mat = store.getClutchMatrix(unitId);
+    if (!mat || (!mat.slip && !mat.thermal)) {
+      box.innerHTML = ''; box.classList.add('hidden'); return;
+    }
+
+    var html = '<h2 class="panel-title"><i class="fa-solid fa-layer-group" style="color:#8b5cf6"></i> Beban Clutch (Matriks)</h2>';
+    html += '<p class="panel-sub">Jumlah kejadian slip & beban termal per posisi clutch, ' +
+      'kumulatif seumur hidup unit. Kolom = AREA pada sumbu-X berkas VHMS ' +
+      '(area 0\u20132 disembunyikan karena hampir selalu jenuh pada semua posisi).</p>';
+
+    // [R4-HD] Bila matriks sudah DIBERSIHKAN (snapshot pra-overhaul, konsep
+    // CLC), jangan tampilkan skor sebagai penilaian aktif — cukup peringatan
+    // + tabel informasi (tanpa klaim keparahan terkini).
+    var anyCut = !!(mat.slip && mat.slip.cut) && !!(mat.thermal && mat.thermal.cut);
+    var anyCutOne = !!((mat.slip && mat.slip.cut) || (mat.thermal && mat.thermal.cut));
+
+    if (anyCutOne) {
+      var cutMsgs = [];
+      ['slip', 'thermal'].forEach(function (k) {
+        if (mat[k] && mat[k].cut) {
+          cutMsgs.push((k === 'slip' ? 'Slip' : 'Thermal') + ': ' + esc(mat[k].cutReason || ''));
+        }
+      });
+      html += '<p class="clutch-note clutch-cut-note" style="border-color:#f59e0b;background:rgba(245,158,11,.12)">' +
+        '<i class="fa-solid fa-scissors"></i> <strong>Data dibersihkan (CLC / pasca-overhaul).</strong> ' +
+        'Snapshot matriks diambil SEBELUM overhaul transmisi/clutch, sehingga isinya adalah ' +
+        'riwayat pra-overhaul dan <strong>TIDAK dipakai untuk skoring</strong>. ' +
+        cutMsgs.join(' ') + '</p>';
+    }
+
+    ['slip', 'thermal'].forEach(function (kind) {
+      var m = mat[kind];
+      if (!m || !m.severityRank || !m.severityRank.length) return;
+
+      var judul = (kind === 'slip') ? 'Slip time' : 'Thermal load';
+      var ikon = (kind === 'slip') ? 'fa-arrows-left-right' : 'fa-temperature-high';
+      html += '<div class="clutch-block">' +
+        '<h3 class="clutch-block-title"><i class="fa-solid ' + ikon + '"></i> ' + judul +
+        (m.cut ? ' <span class="pf-badge" title="Dibersihkan oleh CLC">CUT</span>' : '') +
+        (m.sourceFile ? ' <span class="u-text-mute">(' + esc(m.sourceFile) + ')</span>' : '') +
+        '</h3>';
+
+      // --- Hitung maksimum untuk skala warna (abaikan saturasi mentah) ---
+      var maxCount = 0;
+      var posKeys = Object.keys(m.positions);
+      posKeys.forEach(function (p) {
+        var cnt = m.positions[p].counts || [];
+        for (var i = 3; i < cnt.length; i++) {
+          var v = cnt[i];
+          if (v === null || v === undefined || isNaN(v)) continue;
+          if (v > maxCount) maxCount = v;
+        }
+      });
+
+      // --- Tabel heatmap ---
+      // [ISTILAH 2026-10-13] Judul kolom memakai AREA (kata berkas Komatsu),
+      // bukan "bin". Judul sumbu-X asli ditampilkan agar operator tahu area
+      // ini area APA (mis. "Slip time area" / "Clutch area").
+      var axisTitle = m.xAxisTitle || (kind === 'thermal' ? 'Clutch area' : 'Slip time area');
+      var axisScale = m.xAxisScale ? ' (' + esc(m.xAxisScale) + ')' : '';
+      var yTitle = m.yAxisTitle || 'Clutch Position';
+      html += '<div class="clutch-heat-wrap"><table class="clutch-heat"><thead><tr>' +
+        '<th scope="col" title="' + esc(yTitle) + '">Posisi</th>';
+      for (var b = 3; b <= 6; b++) {
+        html += '<th scope="col" title="' + esc(axisTitle) + '">Area ' + b + '</th>';
+      }
+      html += '<th scope="col">Skor</th></tr>';
+      // Baris keterangan sumbu: jelaskan arti "area" pada tabel ini.
+      html += '<tr class="clutch-axis-row"><th></th><td colspan="4" class="clutch-axis-note">' +
+        'Sumbu: <strong>' + esc(axisTitle) + '</strong>' + axisScale + '</td><th></th></tr>';
+      html += '</thead><tbody>';
+
+      // Urutkan baris sesuai urutan severityRank (paling parah di atas).
+      m.severityRank.forEach(function (row) {
+        var pos = row.position;
+        var pdata = m.positions[pos];
+        if (!pdata) return;
+        var counts = pdata.counts || [];
+        html += '<tr>' +
+          '<th scope="row">' + esc(CLUTCH_POS_LABEL[pos] || pos) + '</th>';
+        for (var c = 3; c <= 6; c++) {
+          var v = counts[c];
+          var isSat = v !== null && v !== undefined && v >= 65535;
+          var txt = (v === null || v === undefined || isNaN(v)) ? '\u2014'
+                  : (isSat ? '\u2265' + fmtInt(v) : fmtInt(v));
+          html += '<td style="background:' + clutchCellColor(v, maxCount) + '"' +
+            (isSat ? ' title="Nilai jenuh (uint16) \u2014 berarti \u2265 65535, bukan angka pasti"' : '') +
+            '>' + txt + '</td>';
+        }
+        // --- Skor keparahan (batas bawah bila bersaturasi) ---
+        var skorTxt = fmtInt(row.severity);
+        if (row.saturated) skorTxt = '\u2265' + skorTxt;
+        html += '<td class="clutch-score" title="Bobot: area3\u00d71, area4\u00d73, area5\u00d79, area6\u00d727">' +
+          skorTxt + '</td>';
+        html += '</tr>';
+      });
+      html += '</tbody></table></div>';
+
+      // --- Kesimpulan singkat ---
+      var top = m.severityRank[0];
+      if (top) {
+        html += '<p class="clutch-top">Keparahan tertinggi: <strong>' +
+          esc(CLUTCH_POS_LABEL[top.position] || top.position) + '</strong> (skor ' +
+          (top.saturated ? '\u2265' : '') + fmtInt(top.severity) + ')' +
+          (top.saturated ? ' \u2014 <span class="u-text-mute">bersaturasi, skor adalah batas bawah</span>' : '') +
+          '</p>';
+      }
+
+      // --- Peringatan kejujuran data ---
+      // Catatan saturasi ditulis SEKALI di sini (bukan mengulang `m.warnings`
+      // yang sudah memuat pesan serupa dari parser) agar panel tidak dobel.
+      if (m.anySaturated) {
+        html += '<p class="clutch-note"><i class="fa-solid fa-triangle-exclamation"></i> ' +
+          'Sebagian sel bernilai 65535 (batas uint16) \u2014 ini berarti "\u2265 65535", ' +
+          'BUKAN nilai pasti. Skor posisi terkait adalah <strong>batas bawah</strong>.</p>';
+      }
+      if (m.warnings && m.warnings.length) {
+        // Lewati peringatan saturasi dari parser karena sudah ditulis di atas.
+        var other = m.warnings.filter(function (w) { return !/saturasi/i.test(w); });
+        if (other.length) {
+          html += '<ul class="clutch-warn-list">';
+          other.forEach(function (w) { html += '<li>' + esc(w) + '</li>'; });
+          html += '</ul>';
+        }
+      }
+
+      html += '</div>';
+    });
+
+    // --- Catatan metodologi (transparansi, bukan hiasan) ---
+    html += '<p class="clutch-method"><i class="fa-solid fa-circle-info"></i> ' +
+      'Skor = \u03a3 (jumlah kejadian \u00d7 bobot area), bobot area = 1/3/9/27 untuk area 3\u20136. ' +
+      'Bobot geometrik karena energi gesek saat slip tumbuh non-linier terhadap durasi. ' +
+      'Matriks ini bersifat <strong>kumulatif seumur hidup</strong> dan TIDAK ter-reset di ECU setelah overhaul. ' +
+      'Bila sistem menemukan tanggal overhaul (Lifetime \u2014 Last Install/LastTecoDate) yang ' +
+      '<em>lebih baru</em> daripada snapshot matriks, matriks otomatis dibersihkan (CLC) dan tidak diskor.</p>';
+
+    box.innerHTML = html;
+    box.classList.remove('hidden');
+  }
+
+  /* -----------------------------------------------------------------------
+   * [D375A 2026-10-13] PANEL MATRIKS PERPINDAHAN GIGI (T/M Shift Change Map)
+   * ---------------------------------------------------------------------
+   * Menampilkan `tm_sft0.CSV` (tipe '83') sebagai heatmap 7x7:
+   * baris = posisi ASAL (From), kolom = posisi TUJUAN (To).
+   *
+   * PRINSIP:
+   *   1. Diagonal (From = To) ditampilkan sebagai "\u2014" dan DIKELUARKAN dari
+   *      total — tidak ada perpindahan ke posisi yang sama secara fisik.
+   *   2. Angka HANYA dilaporkan; TIDAK ada vonis normal/abnormal karena
+   *      ambangnya belum terkalibrasi (lihat catatan metodologi di bawah).
+   *   3. Panel opt-in: hanya muncul bila unit memang punya matriks ini.
+   * --------------------------------------------------------------------- */
+  function renderShiftMapPanel() {
+    var box = document.getElementById('shiftmap-panel');
+    if (!box) return;
+    var store = global.VHMS_FLEET;
+    var app = global.VHMS_APP;
+    var unitId = (app && typeof app.getCurrentUnitId === 'function') ? app.getCurrentUnitId() : null;
+    if (!store || !unitId || typeof store.getShiftMap !== 'function') {
+      box.innerHTML = ''; box.classList.add('hidden'); return;
+    }
+    var m = store.getShiftMap(unitId);
+    if (!m || !m.indicators || !m.rowLabels || !m.rowLabels.length) {
+      box.innerHTML = ''; box.classList.add('hidden'); return;
+    }
+
+    var I = m.indicators;
+    var cols = m.colLabels;
+    var rows = m.rowLabels;
+    var html = '<h2 class="panel-title"><i class="fa-solid fa-right-left" style="color:#38bdf8"></i> ' +
+      'Perpindahan Gigi Transmisi (Matriks)</h2>';
+    html += '<p class="panel-sub">Jumlah perpindahan gigi per pasangan posisi, kumulatif seumur hidup unit. ' +
+      'Baris = posisi <strong>' + esc(m.yAxisTitle || 'From') + '</strong>, kolom = posisi <strong>' +
+      esc(m.xAxisTitle || 'To') + '</strong>. Diagonal ("' + esc('\u2014') + '") dikeluarkan dari total.</p>';
+
+    // --- Ringkasan angka ---
+    var fx = function (n) { return (n === null || n === undefined || isNaN(n)) ? '\u2014' : fmtInt(n); };
+    var pct = function (n) { return (n === null || n === undefined || isNaN(n)) ? '\u2014' : fmt(n, 2) + ' %'; };
+    html += '<div class="fault-kpi">' +
+      faultKpiBox('Total Perpindahan', fx(I.totalShift), 'seumur hidup') +
+      faultKpiBox('Maju (F)', fx(I.forwardShift), 'tujuan F1\u2013F3') +
+      faultKpiBox('Mundur (R)', fx(I.reverseShift), pct(I.reverseRatio) + ' dari total') +
+      faultKpiBox('Netral (N)', fx(I.neutralShift), pct(I.neutralRatio) + ' dari total') +
+      '</div>';
+
+    if (I.biggestCell) {
+      html += '<p class="clutch-top">Perpindahan terbanyak: <strong>' +
+        esc(I.biggestCell.from + ' \u2192 ' + I.biggestCell.to) + '</strong> \u2014 ' +
+        fmtInt(I.biggestCell.count) + ' kali.</p>';
+    }
+
+    // --- Heatmap 7x7 ---
+    var maxCell = 0;
+    m.matrix.forEach(function (row) {
+      row.forEach(function (v) { if (v !== null && !isNaN(v) && v > maxCell) maxCell = v; });
+    });
+    html += '<div class="clutch-heat-wrap" style="margin-top:10px"><table class="clutch-heat shift-heat"><thead><tr>' +
+      '<th scope="col" title="' + esc(m.yAxisTitle || 'From') + ' \u2193 / ' +
+      esc(m.xAxisTitle || 'To') + ' \u2192">From \\ To</th>';
+    cols.forEach(function (c) { html += '<th scope="col">' + esc(c) + '</th>'; });
+    html += '<th scope="col">Total</th></tr></thead><tbody>';
+
+    rows.forEach(function (from, ri) {
+      html += '<tr><th scope="row">' + esc(from) + '</th>';
+      var row = m.matrix[ri] || [];
+      cols.forEach(function (to, ci) {
+        var v = row[ci];
+        // Diagonal: tidak ada perpindahan ke posisi yang sama.
+        if (from === to) {
+          html += '<td class="shift-diag" title="Tidak berlaku (From = To)">\u2014</td>';
+          return;
+        }
+        var isNull = (v === null || v === undefined || isNaN(v));
+        var txt = isNull ? '\u2014' : fmtInt(v);
+        var bg = isNull ? 'rgba(148,163,184,0.12)' : clutchCellColor(v, maxCell);
+        html += '<td style="background:' + bg + '" title="' + esc(from + ' \u2192 ' + to) + ': ' +
+          (isNull ? '\u2014' : fmtInt(v)) + '">' + txt + '</td>';
+      });
+      html += '<td class="clutch-score">' + fmtInt(I.rowTotals[ri]) + '</td></tr>';
+    });
+
+    // Baris total per kolom (Tujuan).
+    html += '<tr class="shift-coltotal"><th scope="row">Total</th>';
+    cols.forEach(function (to, ci) {
+      var t = I.colTotals[ci];
+      html += '<td class="clutch-score">' + ((t === null || t === undefined) ? '\u2014' : fmtInt(t)) + '</td>';
+    });
+    html += '<td class="clutch-score">' + fmtInt(I.totalShift) + '</td></tr>';
+    html += '</tbody></table></div>';
+
+    // --- Peringatan kejujuran data ---
+    if (m.warnings && m.warnings.length) {
+      html += '<ul class="clutch-warn-list">';
+      m.warnings.forEach(function (w) { html += '<li>' + esc(w) + '</li>'; });
+      html += '</ul>';
+    }
+
+    // --- Catatan metodologi ---
+    html += '<p class="clutch-method"><i class="fa-solid fa-circle-info"></i> ' +
+      'Matriks ini bersifat <strong>kumulatif seumur hidup</strong> dan TIDAK ter-reset di ECU setelah overhaul. ' +
+      'Angka <strong>rasio mundur/netral hanya dilaporkan</strong> — <em>belum ada ambang terkalibrasi</em> ' +
+      'untuk menyatakan suatu nilai normal atau abnormal (bukan Shop Manual, bukan statistik populasi). ' +
+      'Gunakan sebagai gambaran POLA OPERASI, lalu konfirmasi dengan catatan lapangan.</p>';
+
+    box.innerHTML = html;
+    box.classList.remove('hidden');
+  }
+
   function renderAll(analysis) {
     renderHeader(analysis);
     renderBanner(analysis);
@@ -1495,12 +2405,35 @@
     renderStatusSummary(analysis);
     renderCorrelations(analysis);
     renderTimeline(analysis);
+    // [T4.5] Panel riwayat event/alarm + gerbang kualitas data
+    renderFaultPanel();
+    // [T10.3 2026-10-09] Panel matriks beban clutch (HD785) — opt-in by data
+    renderClutchPanel();
+    // [D375A 2026-10-13] Panel matriks perpindahan gigi transmisi — opt-in by data
+    renderShiftMapPanel();
+    // [T13 2026-10-10] Panel sumber data PC2000 (load map / snapshot /
+    // op. availability) — opt-in by data, aman untuk model lain.
+    if (global.VHMS_EXTRAS_RENDER && global.VHMS_EXTRAS_RENDER.renderAll) {
+      global.VHMS_EXTRAS_RENDER.renderAll();
+    }
+    // [HD785 2026-10-14] Panel beban per gigi & peta duty operasi —
+    // opt-in by data, aman untuk model lain (PC2000/D375A tidak punya).
+    if (global.VHMS_POWERTRAIN_RENDER && global.VHMS_POWERTRAIN_RENDER.renderAll) {
+      global.VHMS_POWERTRAIN_RENDER.renderAll();
+    }
     // [D375A] Pilih kolom tabel log sesuai keluarga produk SEBELUM render
     // header & body agar keduanya konsisten.
-    activeTableColumns = cfg.tableColumnsFor
-      ? cfg.tableColumnsFor(analysis.familyId, analysis.records)
-      : cfg.TABLE_COLUMNS;
-    renderTableHeader();
+    //
+    // [B-1 2026-10-13] Unit BARU -> lupakan pilihan jenis berkas unit lama
+    // (tipe '81' pada unit A belum tentu ada pada unit B), lalu pilih kolom
+    // lewat `currentTableColumns()` yang SUDAH sadar sumber aktif. Dulu di
+    // sini ada pemanggilan `tableColumnsFor` TERSENDIRI yang melewatkan
+    // seluruh record unit — dua sumber kebenaran untuk hal yang sama.
+    tableState.source = '';
+    activeTableColumns = null;
+    lastAnalysis = analysis;
+    currentTableColumns(analysis);
+    renderTableHeader(analysis);
     renderTable(analysis);
     renderFooter(analysis);
     syncInsightHeight();
@@ -1523,7 +2456,7 @@
   // paling normal di bawah). Unit dengan status lebih berat selalu di atas,
   // lalu di antara status yang sama diurutkan: Engine critical terbanyak,
   // skor criticality window tertinggi, jumlah anomali kritis, lalu health.
-  var fleetState = { search: '', filter: 'ALL', sortKey: 'severity', sortDir: 'desc', page: 1, pageSize: 100 };
+  var fleetState = { search: '', filter: 'ALL', section: 'ALL', sortKey: 'severity', sortDir: 'desc', page: 1, pageSize: 100 };
 
   // [STANDARISASI 2026-10-03] 3 level. Kunci lama tetap dipetakan (alias).
   var HEALTH_ORDER = { 'CRITICAL': 0, 'CAUTION': 1, 'WARNING': 1, 'NORMAL': 2 };
@@ -1609,6 +2542,28 @@
       ', Skor: ' + (r.rankScore === null || r.rankScore === undefined ? '—' : fmt(r.rankScore, 1));
   }
 
+  /**
+   * [T4.5] Sel katalog "Event/Alarm" dari riwayat fault.
+   * Unit tanpa fault -> "—". Unit dengan event -> jumlah + kode terbanyak.
+   * Unit dengan data tidak layak (R4) -> penanda tegas, BUKAN angka 0.
+   */
+  function faultCellHtml(r) {
+    var f = r.fault;
+    if (!f) return '<span class="u-text-mute">—</span>';
+    if (f.dataUnfit) {
+      return '<span class="badge CRITICAL" title="Seluruh parameter ditandai tidak layak — ' +
+        fmtInt(f.recurrence) + ' kemunculan, ' + fmtInt(f.distinctCodes) + ' kode. Unit tidak layak diberi skor.">' +
+        'DATA TIDAK LAYAK</span>';
+    }
+    var tip = fmtInt(f.eventCount) + ' event, ' + fmtInt(f.recurrence) + ' kemunculan, ' +
+      f.distinctCodes + ' kode' + (f.activeCount ? ', ' + f.activeCount + ' masih aktif' : '');
+    var top = f.topCode
+      ? '<span class="fault-top-code" title="' + esc(f.topMsg || '') + '">' + esc(f.topCode) + '</span>'
+      : '';
+    var act = f.activeCount ? ' <span class="fault-active-dot" title="' + f.activeCount + ' event masih aktif">●</span>' : '';
+    return '<span title="' + esc(tip) + '">' + fmtInt(f.eventCount) + '</span>' + act + ' ' + top;
+  }
+
   function renderFleetHeader(stats) {
     setText('fleet-count', fmtInt(stats.count));
     setText('fleet-critical', fmtInt(stats.critical));
@@ -1683,11 +2638,53 @@
   /* -----------------------------------------------------------------------
    * Tabel katalog Home (dioptimasi untuk 200+ baris)
    * --------------------------------------------------------------------- */
+
+  /**
+   * [FITUR 2026-10-06] Section unit VHMS (dari data Lifetime / Data Unit).
+   * Nomor lambung diresolusi dari lambung/serial/id via PORTFOLIO_STORE.
+   * @returns {string} nama section ('' bila tidak ada).
+   */
+  function sectionForVhmsRow(r) {
+    var ps = global.PORTFOLIO_STORE;
+    if (!ps || !ps.getSection || !r) return '';
+    try {
+      var ident = r.lambung || r.serial || r.id;
+      var lambung = (ps.resolveLambung && ps.resolveLambung(ident, r.serial)) || ident;
+      return ps.getSection(lambung) || '';
+    } catch (e) { return ''; }
+  }
+
+  /**
+   * [FITUR 2026-10-06] Isi opsi dropdown SECTION di baris filter VHMS.
+   * Sumber: PORTFOLIO_STORE.sectionList() (dari data Lifetime/Unit DB).
+   * Menjaga nilai terpilih bila masih ada; fallback ke 'ALL'.
+   */
+  function refreshSectionOptions() {
+    var sel = document.getElementById('fleet-section');
+    if (!sel) return;
+    var ps = global.PORTFOLIO_STORE;
+    var list = (ps && ps.sectionList) ? ps.sectionList() : [];
+    var cur = fleetState.section || 'ALL';
+    var html = '<option value="ALL">Semua Section</option>';
+    var found = false;
+    list.forEach(function (s) {
+      if (!s || !s.name) return;
+      if (s.name === cur) found = true;
+      html += '<option value="' + esc(s.name) + '">' + esc(s.name) + ' (' + s.count + ')</option>';
+    });
+    sel.innerHTML = html;
+    sel.value = found ? cur : 'ALL';
+    if (!found) fleetState.section = 'ALL';
+  }
+
   function renderFleetTable() {
     var tbody = document.getElementById('fleet-table-body');
     if (!tbody) return;
     var store = global.VHMS_FLEET;
     var rows = store ? store.rows() : [];
+
+    // Pastikan dropdown Section selalu sinkron dengan data Lifetime terkini.
+    refreshSectionOptions();
 
     // [POIN 5] Perbarui indikator filter sebelum menyaring
     updateFleetFilterUI(store);
@@ -1695,6 +2692,11 @@
     // Filter
     if (fleetState.filter !== 'ALL') {
       rows = rows.filter(function (r) { return r.healthLabel === fleetState.filter; });
+    }
+    // [FITUR 2026-10-06] Filter SECTION (dropdown di baris filter).
+    if (fleetState.section && fleetState.section !== 'ALL') {
+      var wantSec = fleetState.section;
+      rows = rows.filter(function (r) { return sectionForVhmsRow(r) === wantSec; });
     }
     // Cari
     var q = fleetState.search.trim().toLowerCase();
@@ -1739,6 +2741,29 @@
         va = a.kpi.coolantMax; vb = b.kpi.coolantMax;
       } else if (k === 'smrLast') {
         va = a.smrLast; vb = b.smrLast;
+      } else if (k === 'faultEvents') {
+        // [T4.5] Urut dari jumlah event fault terbanyak.
+        va = (a.fault ? a.fault.eventCount : -1);
+        vb = (b.fault ? b.fault.eventCount : -1);
+      } else if (k === 'anomalyCount') {
+        // [FITUR 2026-10-11] Jumlah parameter yang melewati ambang.
+        va = a.anomalyCount || 0; vb = b.anomalyCount || 0;
+      } else if (k === 'topAnomaly') {
+        // [FITUR 2026-10-11] Judul anomali utama (teks).
+        va = ((a.topAnomaly && a.topAnomaly.title) || '').toLowerCase();
+        vb = ((b.topAnomaly && b.topAnomaly.title) || '').toLowerCase();
+        return String(va).localeCompare(String(vb)) * dir;
+      } else if (k === 'urgentRUL') {
+        // [FITUR 2026-10-11] Sisa operasi: "Stabil" (jam besar) dianggap paling
+        // kecil kepentingannya; sudah kritis = 0 jam (paling urgent bila asc).
+        function rulHours(r) {
+          var u = r.urgentRUL;
+          if (!u) return Infinity;
+          if (u.alreadyCritical) return 0;
+          if (u.hours === null || u.hours === undefined) return Infinity;
+          return u.hours;
+        }
+        va = rulHours(a); vb = rulHours(b);
       } else if (k === 'lastTimestamp') {
         va = a.lastTimestamp || ''; vb = b.lastTimestamp || '';
         return String(va).localeCompare(String(vb)) * dir;
@@ -1759,11 +2784,17 @@
     fleetState.page = page;
     var limited = rows.slice((page - 1) * pageSize, page * pageSize);
 
-    // [Point 3] Nomor Peringkat 1..N: unit dengan rankScore tertinggi = 1
-    // (paling critical). Dihitung dari SELURUH rows (bukan hanya yg tampil)
-    // agar nomor tetap bermakna & konsisten dgn urutan default.
+    // [Point 3] Nomor Peringkat 1..N: unit paling critical = 1. Dihitung dari
+    // SELURUH rows (bukan hanya yg tampil) agar nomor tetap bermakna.
+    //
+    // [FIX 2026-10-09] WAJIB memakai comparator yang SAMA dengan pengurutan
+    // baris (compareSeverity). Dulu nomor diturunkan dari `rankScore` saja
+    // sementara baris diurut compareSeverity (status -> engineCritical ->
+    // rankScore -> ...), sehingga kolom Peringkat tidak monoton: di dalam satu
+    // grup status nomornya meloncat-loncat (mis. Caution = 7,4,14,16,19).
+    // SATU sumber urutan -> nomor peringkat = posisi baris.
     var rankByKey = {};
-    rows.slice().sort(function (a, b) { return (b.rankScore || 0) - (a.rankScore || 0); })
+    rows.slice().sort(compareSeverity)
       .forEach(function (u, i) { rankByKey[u.id] = i + 1; });
 
     if (!limited.length) {
@@ -1810,6 +2841,7 @@
           '<td class="center mono kpi-cell" style="' + sCool + '">' + (r.kpi.coolantMax === null || r.kpi.coolantMax === undefined ? '—' : fmt(r.kpi.coolantMax, 1)) + '</td>' +
           '<td class="center mono kpi-cell" style="' + sHyd + '">' + (r.kpi.hydTempMax === null ? '—' : fmt(r.kpi.hydTempMax, 1)) + '</td>' +
           '<td class="center">' + (r.anomalyCount ? r.anomalyCount + ' <span class="u-text-mute">(' + r.nCritThresholds + ' kritis)</span>' : '0') + '</td>' +
+          '<td class="center fault-cell">' + faultCellHtml(r) + '</td>' +
           '<td class="wrap-text" style="font-size:11px">' + topCell + '</td>' +
           '<td class="center mono" style="font-size:11px">' + rulCellHtml(r.urgentRUL) + '</td>' +
           '<td class="center"><button class="btn btn-ghost btn-sm fleet-open" data-unit-id="' + esc(r.id) + '">Detail</button></td>' +
@@ -1883,9 +2915,12 @@
     var resetBtn = document.getElementById('btn-reset-filter');
     var hasFilter = (active !== 'ALL');
     var hasSearch = !!(fleetState.search && fleetState.search.trim());
+    // [FITUR 2026-10-06] Sertakan filter SECTION pada tag & tombol reset.
+    var hasSection = !!(fleetState.section && fleetState.section !== 'ALL');
     if (tag) {
-      if (hasFilter || hasSearch) {
+      if (hasFilter || hasSearch || hasSection) {
         var parts = [];
+        if (hasSection) parts.push('Section: <strong>' + esc(fleetState.section) + '</strong>');
         if (hasFilter) parts.push('Status: <strong>' + esc(active) + '</strong>');
         if (hasSearch) parts.push('Cari: "<strong>' + esc(fleetState.search.trim()) + '</strong>"');
         tag.innerHTML = '<i class="fa-solid fa-filter"></i> ' + parts.join(' &middot; ') +
@@ -1896,7 +2931,7 @@
         tag.classList.add('hidden');
       }
     }
-    if (resetBtn) resetBtn.classList.toggle('hidden', !(hasFilter || hasSearch));
+    if (resetBtn) resetBtn.classList.toggle('hidden', !(hasFilter || hasSearch || hasSection));
 
     return counts;
   }
@@ -2035,7 +3070,9 @@
     // [FIX 2026-10-04] Sticky & z-index diurus CSS (lihat sos-render untuk
     // penjelasan). Inline z-index:2 di sini membuat header pojok tertembus
     // label baris yang ber-z-index 3.
-    var thHtml = '<tr><th scope="row" class="th-label">Unit</th>';
+    // [O-4 2026-10-12] Sel sudut: `scope="row"` keliru (sel ini di `thead` dan
+    // bukan header baris mana pun). Dihapus — cukup `<td>` kosong-makna.
+    var thHtml = '<tr><td class="th-label">Unit</td>';
     var vhmsGmap = paramGroupMap();
     paramKeys.forEach(function (k) {
       var meta = paramMeta(k);
@@ -2099,9 +3136,12 @@
       // Inisial badge dari KUNCI status internal (N/W/C) — konsisten dengan
       // pola SOS (tierKey) dan tidak bergantung pada label tampilan.
       var statusInitial = String(row.healthLabel || 'NORMAL').charAt(0);
-      html += '<td class="hm-label">' +
+      // [O-4 2026-10-12] Nama unit adalah HEADER bagi seluruh sel parameter di
+      // barisnya → `<th scope="row">`. Gaya `td.hm-label` di CSS sudah
+      // diperluas ke `th.hm-label`, jadi tampilan tidak berubah.
+      html += '<th scope="row" class="hm-label">' +
         '<span class="badge ' + row.healthLabel + '" style="font-size:11px;padding:1px 5px;margin-right:4px">' + statusInitial + '</span>' +
-        esc(label) + '</td>';
+        esc(label) + '</th>';
 
       paramKeys.forEach(function (k) {
         var s = summary[k];
@@ -2128,6 +3168,41 @@
   function setFleetState(patch) {
     Object.keys(patch).forEach(function (k) { fleetState[k] = patch[k]; });
   }
+
+  /** [FITUR 2026-10-09] Ubah halaman tabel Riwayat Event lalu render ulang. */
+  function setFaultPage(page) {
+    var p = parseInt(page, 10);
+    if (!p || p < 1) return;
+    faultState.page = p;
+    renderFaultPanel();
+  }
+
+  /**
+   * [FITUR 2026-10-11] Urutkan tabel Riwayat Event berdasar klik header.
+   * Klik pada kolom yang sama membalik arah; kolom baru dimulai desc.
+   * Selalu kembali ke halaman 1 agar hasil urutan terlihat dari atas.
+   */
+  function setFaultSort(key) {
+    if (!key) return;
+    if (faultState.sortKey === key) {
+      faultState.sortDir = (faultState.sortDir === 'asc') ? 'desc' : 'asc';
+    } else {
+      faultState.sortKey = key;
+      faultState.sortDir = 'desc';
+    }
+    faultState.page = 1;
+    renderFaultPanel();
+  }
+
+  /** [FITUR 2026-10-11] Set teks filter kolom Keterangan lalu render ulang. */
+  function setFaultFilter(text) {
+    faultState.filter = (text === null || text === undefined) ? '' : String(text);
+    faultState.page = 1;
+    renderFaultPanel();
+  }
+
+  /** [FITUR 2026-10-11] Akses state tabel Riwayat Event (untuk pengujian). */
+  function getFaultState() { return Object.assign({}, faultState); }
 
   /* -----------------------------------------------------------------------
    * UNIT COMPARISON — ranking criticalitas armada
@@ -2362,8 +3437,10 @@
       try { return dbU.getLambung(serial); } catch (e) { return null; }
     }
 
+    // [O-4 2026-10-12] `scope="row"` pada sel sudut `thead` keliru — ini header
+    // KOLOM untuk kolom nama parameter di bawahnya.
     var headHtml = '<tr>' +
-      '<th scope="row" style="position:sticky;left:0;z-index:3;background:#020617">Parameter</th>' +
+      '<th scope="col" style="position:sticky;left:0;z-index:3;background:#020617">Parameter</th>' +
       '<th scope="col" class="center">Satuan</th>' +
       '<th scope="col" class="center">Batas (Warn/Crit)</th>';
     matrix.units.forEach(function (u) {
@@ -2406,11 +3483,14 @@
       }
       var bound = fmt(row.warn, row.decimals) + ' / ' + fmt(row.crit, row.decimals);
 
+      // [O-4 2026-10-12] Nama parameter adalah header bagi seluruh nilai per
+      // unit di barisnya → `<th scope="row">`. CSS `td.param-name` diperluas
+      // ke `th.param-name` agar tampilan tidak berubah.
       html += '<tr>' +
-        '<td class="param-name" style="position:sticky;left:0;background:#0b1220">' +
+        '<th scope="row" class="param-name" style="position:sticky;left:0;background:#0b1220">' +
           '<span class="p-label">' + esc(row.label) + '</span>' +
           '<span class="p-meta">' + (row.mode === 'low' ? '↓ makin kecil makin bahaya' : '↑ makin besar makin bahaya') + '</span>' +
-        '</td>' +
+        '</th>' +
         '<td class="center u-text-mute">' + esc(row.unit || '—') + '</td>' +
         '<td class="center mono" style="color:var(--text-mute);font-size:10.5px">' + bound + '</td>';
 
@@ -2886,12 +3966,32 @@
     closeAnomalyModal: closeAnomalyModal,
     isAnomalyModalOpen: isAnomalyModalOpen,
     renderTable: renderTable,
+    renderTableHeader: renderTableHeader,
+    computeTableRows: computeTableRows,
+    buildTelemetryCsv: buildTelemetryCsv,
+    resetTableColumns: resetTableColumns,
+    /** [B-1] Daftar jenis berkas sumber pada unit + jumlah barisnya. */
+    tableSources: tableSources,
+    headerColumnParams: headerColumnParams,
+    /** [B-1] Jenis berkas yang sedang ditampilkan di tabel log. */
+    activeSource: activeSource,
+    /** [B-1] Record milik satu jenis berkas saja. */
+    recordsOfSource: recordsOfSource,
     setTableState: setTableState,
     getTableState: function () { return Object.assign({}, tableState); },
     renderFleet: renderFleet,
     renderFleetTable: renderFleetTable,
+    renderFaultPanel: renderFaultPanel,
+    renderClutchPanel: renderClutchPanel,
+    renderShiftMapPanel: renderShiftMapPanel,
+    setFaultPage: setFaultPage,
+    setFaultSort: setFaultSort,
+    setFaultFilter: setFaultFilter,
+    getFaultState: getFaultState,
     renderHeatmap: renderHeatmap,
     updateFleetFilterUI: updateFleetFilterUI,
+    refreshSectionOptions: refreshSectionOptions,
+    sectionForVhmsRow: sectionForVhmsRow,
     setFleetState: setFleetState,
     getFleetState: function () { return Object.assign({}, fleetState); },
     renderComparison: renderComparison,

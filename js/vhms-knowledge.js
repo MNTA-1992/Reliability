@@ -183,6 +183,110 @@
                     'Analisis pola operasi (payload, jarak, grade).',
                     'Lakukan kalibrasi sistem bahan bakar.']
         }
+      ),
+      /* -----------------------------------------------------------------
+       * [T11 2026-10-09] DUTY GAS BUANG PER GRUP SILINDER — HD785 (V12).
+       * -----------------------------------------------------------------
+       * Mesin SAA12V140E3 dibagi 4 grup:
+       *   LF = Left-Bank Front    LR = Left-Bank Rear
+       *   RF = Right-Bank Front   RR = Right-Bank Rear
+       * `XxExhOver800` = DURASI (detik) suhu grup itu di atas 800 \\u00b0C
+       * selama SATU INTERVAL snapshot \\u2014 ukuran beban termal per grup.
+       *
+       * Untuk D375A, dua bank ditulis sebagai `fExhTempMax`/`rExhTempMax`
+       * (satu nilai per bank). HD785 menulis DURASI per grup \\u2014 dua hal
+       * berbeda, jangan disamakan.
+       *
+       * \\u26a0 WAJIB: VERIFIKASI SENSOR SEBELUM MENINDAKLANJUTI.
+       *   Kode fault `DGT5KB`/`DGT6KB` (LBF/RBF) mem-mask kanal LF/RF.
+       *   [R2-HD 2026-10-09] Kode huruf kecil `dGT5KB`/`dGT6KB` (LBR/RBR) kini
+       *   JUGA terdaftar dan mem-mask kanal LR/RR secara BENAR — pencarian
+       *   mask terbukti case-sensitive, jadi tidak ada tabrakan nama.
+       *   Gerbang kewarasan termal (nilai > 5 % dari durasi interval) TETAP
+       *   menjadi jaring pengaman KEDUA yang independen dari FAULT_SENSOR_MAP.
+       *   Nilai seperti 590.649 detik pada interval 200 jam adalah MUSTAHIL
+       *   secara fisik dan berarti sensor, bukan mesin.
+       * ----------------------------------------------------------------- */
+      lfExhOver800: entry(
+        'Engine',
+        ['Komatsu Shop Manual — Exhaust Temperature (HD785)',
+         'Komatsu Technical Bulletin — Exhaust Gas Temperature Monitoring'],
+        {
+          likely: ['Beban hauling menanjak pada grup LF', 'Injektor grup LF mulai tidak seimbang',
+                   'Sensor EGT grup LF perlu verifikasi'],
+          actions: ['VERIFIKASI SENSOR lebih dulu — cek fault `DGT5KB` (LBF Failure). Bila ada, perbaiki sensor dahulu.',
+                    'Bandingkan durasi LF vs LR vs RF vs RR — selisih besar menandakan grup bermasalah.',
+                    'Periksa kebersihan air cleaner & jalur intake.']
+        },
+        {
+          likely: ['Overheat gas buang grup LF → risiko valve/turbo pada grup itu',
+                   'Injektor grup LF tidak bekerja optimal',
+                   'Atau: SENSOR grup LF RUSAK — verifikasi dahulu'],
+          actions: ['Periksa fault `DGT5KB`/`DGT5KF` — bila sensor rusak, ganti sebelum analisis lanjut.',
+                    'Uji injektor & timing grup LF.',
+                    'Inspeksi valve & turbocharger sisi kiri.',
+                    'Kurangi beban operasi sementara.'],
+          escalate: 'Pastikan sensor VALID sebelum memutuskan pembongkaran mesin.'
+        }
+      ),
+      lrExhOver800: entry(
+        'Engine',
+        ['Komatsu Shop Manual — Exhaust Temperature (HD785)',
+         'Komatsu Technical Bulletin — Exhaust Gas Temperature Monitoring'],
+        {
+          likely: ['Beban hauling pada grup LR', 'Injektor grup LR mulai tidak seimbang'],
+          actions: ['VERIFIKASI SENSOR \\u2014 cek fault `dGT5KB` (LBR Failure). Kode ini mem-mask kanal LR otomatis (R2-HD diperbaiki).',
+                    'Bandingkan durasi LR vs grup lain.',
+                    'Periksa sistem bahan bakar grup LR.']
+        },
+        {
+          likely: ['Overheat gas buang grup LR',
+                   'Injektor grup LR tidak optimal',
+                   'Atau: SENSOR grup LR RUSAK (nilai > 5 % durasi interval = mustahil)'],
+          actions: ['Periksa fault `dGT5KB` — bila sensor rusak, data LR otomatis ter-mask; ganti sebelum analisis lanjut.',
+                    'Uji injektor & timing grup LR.',
+                    'Inspeksi valve & turbocharger sisi kiri belakang.'],
+          escalate: 'Konfirmasi status mask kanal LR (fault `dGT5KB`) sebelum menilai pembakaran.'
+        }
+      ),
+      rfExhOver800: entry(
+        'Engine',
+        ['Komatsu Shop Manual — Exhaust Temperature (HD785)',
+         'Komatsu Technical Bulletin — Exhaust Gas Temperature Monitoring'],
+        {
+          likely: ['Beban hauling menanjak pada grup RF', 'Injektor grup RF mulai tidak seimbang'],
+          actions: ['VERIFIKASI SENSOR \\u2014 cek fault `DGT6KB` (RBF Failure). Kode ini SERING muncul berulang (ribuan kali pada unit contoh).',
+                    'Bandingkan durasi RF vs grup lain.',
+                    'Periksa kebersihan air cleaner.']
+        },
+        {
+          likely: ['Overheat gas buang grup RF',
+                   'Injektor grup RF tidak optimal',
+                   'Atau: SENSOR grup RF RUSAK \\u2014 `DGT6KB` sering berulang hingga snapshot terakhir'],
+          actions: ['Periksa & GANTI sensor grup RF — kode `DGT6KB` mem-mask kanal ini otomatis, jadi data mentahnya tidak dipakai menilai pembakaran.',
+                    'Setelah sensor valid, uji injektor & timing grup RF.',
+                    'Inspeksi valve & turbocharger sisi kanan.'],
+          escalate: 'Prioritaskan verifikasi sensor \\u2014 kanal RF paling sering ter-mask pada data contoh.'
+        }
+      ),
+      rrExhOver800: entry(
+        'Engine',
+        ['Komatsu Shop Manual — Exhaust Temperature (HD785)',
+         'Komatsu Technical Bulletin — Exhaust Gas Temperature Monitoring'],
+        {
+          likely: ['Beban hauling pada grup RR', 'Injektor grup RR mulai tidak seimbang'],
+          actions: ['VERIFIKASI SENSOR \\u2014 cek fault `dGT6KB` (RBR Failure). Kode ini mem-mask kanal RR otomatis (R2-HD diperbaiki).',
+                    'Bandingkan durasi RR vs grup lain.']
+        },
+        {
+          likely: ['Overheat gas buang grup RR',
+                   'Injektor grup RR tidak optimal',
+                   'Atau: SENSOR grup RR RUSAK \\u2014 pada unit contoh nilainya 590.649 detik pada interval 200 jam (81,9 %), MUSTAHIL secara fisik'],
+          actions: ['Periksa fault `dGT6KB` \\u2014 bila sensor rusak, data RR otomatis ter-mask (sekaligus gerbang kewarasan termal menandai 24 temuan pada unit contoh).',
+                    'Ganti/verifikasi sensor grup RR sebelum analisis lanjut.',
+                    'Setelah sensor valid, uji injektor & timing grup RR.'],
+          escalate: 'Nilai mustahil = masalah SENSOR. Jangan tindak lanjuti sebagai masalah mesin.'
+        }
       )
     },
 
@@ -332,6 +436,167 @@
                     'Evaluasi kebutuhan repair/replace pompa.'],
           escalate: 'Hindari pembebanan blade berlebih hingga tekanan normal.'
         }
+      ),
+      /* -----------------------------------------------------------------
+       * [T11 2026-10-09] CLUTCH PACK FILL TIME — HD785 (chas_trend0.CSV).
+       * -----------------------------------------------------------------
+       * `tmFillX` = waktu (msec) yang dibutuhkan clutch pack untuk terisi
+       * penuh, PER POSISI. Ini indikator keausan powertrain PALING LANGSUNG
+       * pada haul truck: saat pack aus, seal mengeras, atau tekanan modulasi
+       * turun, oli butuh waktu lebih lama mengisi pack.
+       *
+       * ⚠ WAJIB DIINGAT SAAT MEMBACA:
+       *   - Nilai absolut BERBEDA ANTAR POSISI pada unit sehat (Low ~305 msec
+       *     vs R ~908 msec). Karena itu yang bermakna adalah KENAIKAN relatif
+       *     terhadap dasar awal-umur unit itu sendiri — bukan satu angka sama
+       *     untuk semua posisi.
+       *   - `tmFillX` (waktu PENGISIAN pack) BERBEDA dari `tmTrgTimeX`
+       *     (waktu TRIGGER solenoid ECMV, hanya belasan msec). Jangan tertukar.
+       *   - Threshold masih `provisional` (diturunkan dari 1 unit). Jangan
+       *     memicu work order sebelum dikonfirmasi tim maintenance.
+       * TODO: satukan 7 entri di bawah bila UI sudah mendukung rujukan bersama
+       *       (saat ini ditulis eksplisit agar jelas & tidak berbagi objek).
+       * ----------------------------------------------------------------- */
+      tmFillLow: entry(
+        'Transmission',
+        ['Komatsu Shop Manual — Transmission Clutch Fill Time (HD785)',
+         'Komatsu Technical Bulletin — Transmission Clutch Wear Monitoring'],
+        {
+          likely: ['Keausan awal clutch pack posisi Low',
+                   'Tekanan modulasi clutch sedikit menurun',
+                   'Seal piston clutch mulai mengeras'],
+          actions: ['Bandingkan dengan nilai DASAR awal-umur unit ini (bukan angka mutlak).',
+                    'Periksa tekanan main transmisi & jadwal ganti oli T/M.',
+                    'Cross-check matriks clutch_slip: apakah posisi Low mulai masuk area keparahan tinggi.']
+        },
+        {
+          likely: ['Clutch pack posisi Low aus / seal bocor',
+                   'Kebocoran internal sirkuit clutch',
+                   'Filter oli T/M tersumbat berulang'],
+          actions: ['Ambil sampel oli T/M — cari serpihan & uji viskositas.',
+                    'Periksa filter oli T/M (fault 15B0NX T/M Oil Filter Clogged).',
+                    'Uji tekanan clutch per posisi terhadap spesifikasi manual.',
+                    'Jadwalkan inspeksi clutch pack bila fill time terus memanjang.'],
+          escalate: 'Hentikan pembebanan berat bila fill time melewati batas kritis — risiko slip & panas berlebih.'
+        }
+      ),
+      tmFillHigh: entry(
+        'Transmission',
+        ['Komatsu Shop Manual — Transmission Clutch Fill Time (HD785)'],
+        {
+          likely: ['Keausan awal clutch pack posisi High',
+                   'Tekanan modulasi clutch sedikit menurun',
+                   'Variasi wajar antar-interval operasi'],
+          actions: ['Bandingkan dengan DASAR awal-umur unit (bukan angka mutlak).',
+                    'Periksa tekanan main transmisi.',
+                    'Catat: pada data nyata posisi High bisa TURUN — bukan selalu naik.']
+        },
+        {
+          likely: ['Clutch pack posisi High aus', 'Kebocoran internal sirkuit clutch',
+                   'Filter oli T/M tersumbat'],
+          actions: ['Ambil sampel oli T/M (serpihan & viskositas).',
+                    'Periksa filter oli T/M.',
+                    'Uji tekanan clutch posisi High terhadap spesifikasi.'],
+          escalate: 'Batasi operasi sampai penyebab fill time abnormal dipastikan.'
+        }
+      ),
+      tmFill1: entry(
+        'Transmission',
+        ['Komatsu Shop Manual — Transmission Clutch Fill Time (HD785)'],
+        {
+          likely: ['Keausan awal clutch pack gigi 1', 'Tekanan modulasi clutch menurun',
+                   'Seal piston clutch mulai mengeras'],
+          actions: ['Bandingkan dengan DASAR awal-umur unit.',
+                    'Cross-check matriks clutch_slip — posisi 1st adalah yang PALING SERING menumpuk kejadian slip berat.',
+                    'Periksa tekanan main & jadwal ganti oli T/M.']
+        },
+        {
+          likely: ['Clutch pack gigi 1 aus / slip berlebih',
+                   'Kaitan dengan fault 15K0MW "1st Clutch Slipping"',
+                   'Kaitan dengan fault 15F7KM "TM clutch disk Abuse (Front)"',
+                   'Filter oli T/M tersumbat (15B0NX)'],
+          actions: ['Ambil sampel oli T/M — cari serpihan clutch & uji viskositas.',
+                    'Periksa filter oli T/M.',
+                    'Inspeksi clutch pack gigi 1 (pack paling terbebani saat start berbeban).',
+                    'Evaluasi gaya operasi operator (start berbeban penuh).'],
+          escalate: 'Prioritaskan inspeksi transmisi — slip gigi 1 memperburuk seluruh powertrain.'
+        }
+      ),
+      tmFill2: entry(
+        'Transmission',
+        ['Komatsu Shop Manual — Transmission Clutch Fill Time (HD785)'],
+        {
+          likely: ['Keausan awal clutch pack gigi 2', 'Tekanan modulasi clutch menurun',
+                   'Variasi wajar antar-interval'],
+          actions: ['Bandingkan dengan DASAR awal-umur unit.',
+                    'Periksa tekanan main transmisi & filter oli T/M.',
+                    'Cross-check matriks clutch_slip posisi 2nd.']
+        },
+        {
+          likely: ['Clutch pack gigi 2 aus', 'Kebocoran internal sirkuit clutch gigi 2',
+                   'Filter oli T/M tersumbat'],
+          actions: ['Ambil sampel oli T/M.', 'Periksa filter oli T/M.',
+                    'Uji tekanan clutch gigi 2 terhadap spesifikasi.'],
+          escalate: 'Jadwalkan inspeksi transmisi bila disertai slip (clutch_slip area tinggi).'
+        }
+      ),
+      tmFill3: entry(
+        'Transmission',
+        ['Komatsu Shop Manual — Transmission Clutch Fill Time (HD785)'],
+        {
+          likely: ['Keausan awal clutch pack gigi 3', 'Tekanan modulasi clutch menurun',
+                   'Variasi wajar antar-interval'],
+          actions: ['Bandingkan dengan DASAR awal-umur unit.',
+                    'Periksa tekanan main transmisi & filter oli T/M.']
+        },
+        {
+          likely: ['Clutch pack gigi 3 aus', 'Kebocoran internal sirkuit clutch gigi 3',
+                   'Filter oli T/M tersumbat'],
+          actions: ['Ambil sampel oli T/M.', 'Periksa filter oli T/M.',
+                    'Uji tekanan clutch gigi 3 terhadap spesifikasi.'],
+          escalate: 'Jadwalkan inspeksi transmisi bila disertai slip.'
+        }
+      ),
+      tmFill4: entry(
+        'Transmission',
+        ['Komatsu Shop Manual — Transmission Clutch Fill Time (HD785)'],
+        {
+          likely: ['Keausan awal clutch pack gigi 4', 'Tekanan modulasi clutch menurun',
+                   'Variasi wajar antar-interval'],
+          actions: ['Bandingkan dengan DASAR awal-umur unit.',
+                    'Periksa tekanan main transmisi & filter oli T/M.',
+                    'Catatan: pada matriks thermal, posisi 4rd justru mencatat duty termal tertinggi kedua.']
+        },
+        {
+          likely: ['Clutch pack gigi 4 aus', 'Kebocoran internal sirkuit clutch gigi 4',
+                   'Filter oli T/M tersumbat'],
+          actions: ['Ambil sampel oli T/M.', 'Periksa filter oli T/M.',
+                    'Uji tekanan clutch gigi 4 terhadap spesifikasi.'],
+          escalate: 'Jadwalkan inspeksi transmisi bila disertai slip atau duty termal tinggi.'
+        }
+      ),
+      tmFillR: entry(
+        'Transmission',
+        ['Komatsu Shop Manual — Transmission Clutch Fill Time (HD785)',
+         'Komatsu Technical Bulletin — Transmission Clutch Wear Monitoring'],
+        {
+          likely: ['Keausan awal clutch pack posisi R (mundur)',
+                   'Tekanan modulasi clutch menurun',
+                   'Seal piston clutch mulai mengeras'],
+          actions: ['Bandingkan dengan DASAR awal-umur unit (R ~908 msec pada unit sehat — jangan dipakai angka Low).',
+                    'Periksa tekanan main transmisi & filter oli T/M.',
+                    'Cross-check fault DDTNKA "R Clutch Fill Switch circuit Disconnect" bila berulang.']
+        },
+        {
+          likely: ['Clutch pack posisi R aus / seal bocor',
+                   'Kebocoran internal sirkuit clutch R',
+                   'Filter oli T/M tersumbat berulang (15B0NX)'],
+          actions: ['Ambil sampel oli T/M — serpihan & viskositas.',
+                    'Periksa filter oli T/M.',
+                    'Uji tekanan clutch posisi R terhadap spesifikasi.',
+                    'Inspeksi switch pengisian clutch R (DDTNKA).'],
+          escalate: 'Batasi operasi mundur berbeban berat hingga fill time kembali normal.'
+        }
       )
     },
 
@@ -367,6 +632,70 @@
           likely: ['Overheat retarder', 'Gangguan pendinginan retarder'],
           actions: ['Periksa sirkuit pendingin retarder & pompa.', 'Cek kondisi oli & filter.', 'Evaluasi pola pengoperasian turunan.'],
           escalate: 'Batasi penggunaan retarder hingga sistem dingin & diperiksa.'
+        }
+      ),
+      /* -----------------------------------------------------------------
+       * [T11 2026-10-09] DUTY TERMAL RETARDER — HD785 (chas_trend0.CSV).
+       * -----------------------------------------------------------------
+       * `fRtdOver140`/`rRtdOver140` = DURASI (detik) oli retarder berada di
+       * atas 140 \u00b0C selama SATU INTERVAL snapshot. Ini ukuran BEBAN
+       * pengereman kumulatif per interval, bukan suhu sesaat.
+       *
+       * \u26a0 Dua hal yang wajib diingat:
+       *   1. Nilainya DELTA PER INTERVAL \u2014 JANGAN dibaca sebagai akumulasi
+       *      seumur hidup, dan JANGAN ditafsirkan lewat `slope`.
+       *   2. Melewati 120/130 \u00b0C saat turunan berbeban adalah NORMAL dan
+       *      tidak diberi ambang. Hanya tingkat 140 \u00b0C yang dinilai.
+       *
+       * Bobot ranking-nya 14 (setara `retarderTemp`), LEBIH TINGGI dari duty
+       * T/C, karena brake fading saat turunan berbeban adalah risiko
+       * KESELAMATAN \u2014 bukan sekadar biaya komponen.
+       * ----------------------------------------------------------------- */
+      fRtdOver140: entry(
+        'Brake & Retarder',
+        ['Komatsu Shop Manual — Retarder System (HD785)',
+         'Komatsu Technical Bulletin — Retarder Thermal Duty'],
+        {
+          likely: ['Penggunaan retarder berkepanjangan pada turunan panjang',
+                   'Pendinginan retarder mulai kurang optimal',
+                   'Pola operasi turunan tidak efisien'],
+          actions: ['Periksa level & kondisi oli retarder (viskositas turun saat overheat).',
+                    'Cek kerja heat exchanger & pompa sirkulasi retarder.',
+                    'Evaluasi prosedur turunan: gunakan gigi & retarder bertahap, bukan menahan penuh.',
+                    'Cross-check SOS Transmission: viskositas & oksidasi oli (overheat mempercepat degradasi).']
+        },
+        {
+          likely: ['Duty termal retarder berlebih \u2192 degradasi oli & seal mengeras',
+                   'Risiko brake fading saat turunan berbeban (KESELAMATAN)',
+                   'Gangguan pendinginan retarder depan'],
+          actions: ['Ambil sampel oli retarder/transmisi \u2014 uji viskositas & oksidasi.',
+                    'Periksa heat exchanger, pompa, & kebocoran sirkuit.',
+                    'Tinjau ulang rute & prosedur operasi turunan.',
+                    'Inspeksi seal & kondisi retarder bila duty tetap tinggi.'],
+          escalate: 'PRIORITAS KESELAMATAN: verifikasi performa pengereman sebelum melanjutkan operasi turunan berbeban.'
+        }
+      ),
+      rRtdOver140: entry(
+        'Brake & Retarder',
+        ['Komatsu Shop Manual — Retarder System (HD785)',
+         'Komatsu Technical Bulletin — Retarder Thermal Duty'],
+        {
+          likely: ['Penggunaan retarder belakang berkepanjangan',
+                   'Pendinginan retarder belakang kurang optimal',
+                   'Distribusi pengereman tidak seimbang depan/belakang'],
+          actions: ['Bandingkan duty R vs F \u2014 selisih besar berarti distribusi tidak seimbang.',
+                    'Periksa level & kondisi oli retarder belakang.',
+                    'Cek heat exchanger retarder belakang.',
+                    'Evaluasi prosedur pengereman turunan.']
+        },
+        {
+          likely: ['Duty termal retarder belakang berlebih',
+                   'Ketidakseimbangan pengereman depan/belakang',
+                   'Risiko brake fading (KESELAMATAN)'],
+          actions: ['Ambil sampel oli \u2014 uji viskositas & oksidasi.',
+                    'Periksa sirkuit pendingin retarder belakang.',
+                    'Verifikasi keseimbangan sistem pengereman depan/belakang.'],
+          escalate: 'PRIORITAS KESELAMATAN: jangan lanjutkan turunan berbeban sebelum sistem diperiksa.'
         }
       )
     },
@@ -567,10 +896,564 @@
   }
 
   /** Rekomendasi untuk SELURUH anomali sebuah unit. */
+  /* -----------------------------------------------------------------------
+   * [T7.3 2026-10-08] BASIS PENGETAHUAN KODE FAULT (fault0.CSV)
+   * ---------------------------------------------------------------------
+   * Kunci = kode fault VHMS; nilai = { system, title, likely[], actions[] }.
+   * Bentuk mengikuti KB parameter yang sudah ada (gejala -> kemungkinan
+   * penyebab -> tindakan).
+   *
+   * ATURAN KERAS untuk kode SENSOR: tindakan PERTAMA selalu "verifikasi /
+   * ganti sensor SEBELUM menindaklanjuti nilai parameternya". Alasannya
+   * sederhana — bila sensornya yang rusak, seluruh pembacaan parameternya
+   * tidak layak dipakai untuk keputusan (inilah gerbang kualitas data T2).
+   * --------------------------------------------------------------------- */
+  var FAULT_KB = {
+    DGT5KA: {
+      system: 'Engine — Exhaust Temperature',
+      title: 'Exhaust temp. sensor F failure',
+      likely: [
+        'Sensor suhu gas buang bank kiri (F) rusak / kabel putus',
+        'Konektor sensor kotor, lembab, atau longgar',
+        'Modul input VHMS bermasalah'
+      ],
+      actions: [
+        'VERIFIKASI / GANTI sensor suhu gas buang bank F sebelum menindaklanjuti nilai fExhTempMax.',
+        'Periksa konektor & harness sensor dari kotoran/kelembapan/korosi.',
+        'Bandingkan pembacaan bank F vs bank R saat idle — selisih tak wajar menandakan sensor.',
+        'Setelah sensor sehat, baru evaluasi keseimbangan pembakaran per bank.'
+      ]
+    },
+    DGT5KB: {
+      system: 'Engine — Exhaust Temperature',
+      title: 'Exhaust temp. sensor F failure',
+      likely: [
+        'Sensor suhu gas buang bank kiri (F) rusak / intermiten',
+        'Harness terkelupas atau tersenggol komponen panas',
+        'Ground sensor tidak stabil'
+      ],
+      actions: [
+        'VERIFIKASI / GANTI sensor suhu gas buang bank F sebelum menindaklanjuti nilai fExhTempMax.',
+        'Periksa jalur harness dari panas & gesekan; rapikan pengikat kabel.',
+        'Periksa kualitas ground/arde rangkaian sensor.',
+        'Catat kronologi fault untuk melihat apakah intermiten atau permanen.'
+      ]
+    },
+    DGT6KA: {
+      system: 'Engine — Exhaust Temperature',
+      title: 'Exhaust temp. sensor R failure',
+      likely: [
+        'Sensor suhu gas buang bank kanan (R) rusak / kabel putus',
+        'Konektor sensor kotor, lembab, atau longgar',
+        'Modul input VHMS bermasalah'
+      ],
+      actions: [
+        'VERIFIKASI / GANTI sensor suhu gas buang bank R sebelum menindaklanjuti nilai rExhTempMax.',
+        'Periksa konektor & harness sensor dari kotoran/kelembapan/korosi.',
+        'Bandingkan pembacaan bank R vs bank F saat idle — selisih tak wajar menandakan sensor.',
+        'Setelah sensor sehat, baru evaluasi keseimbangan pembakaran per bank.'
+      ]
+    },
+    DGT6KB: {
+      system: 'Engine — Exhaust Temperature',
+      title: 'Exhaust temp. sensor R failure',
+      likely: [
+        'Sensor suhu gas buang bank kanan (R) rusak / intermiten',
+        'Harness terkelupas atau tersenggol komponen panas',
+        'Ground sensor tidak stabil'
+      ],
+      actions: [
+        'VERIFIKASI / GANTI sensor suhu gas buang bank R sebelum menindaklanjuti nilai rExhTempMax.',
+        'Periksa jalur harness dari panas & gesekan; rapikan pengikat kabel.',
+        'Periksa kualitas ground/arde rangkaian sensor.',
+        'Catat kronologi fault untuk melihat apakah intermiten atau permanen.'
+      ]
+    },
+    DHE5KB: {
+      system: 'Engine — Blowby',
+      title: 'Blowby pressure sensor failure',
+      likely: [
+        'Sensor tekanan blowby (crankcase) rusak / tersumbat',
+        'Selang ukur blowby bocor atau tertekuk',
+        'Konektor/harness sensor bermasalah'
+      ],
+      actions: [
+        'VERIFIKASI / GANTI sensor tekanan blowby sebelum menindaklanjuti nilai blowbyMax.',
+        'Periksa selang & saluran ukur blowby dari kebocoran, tekukan, atau kerak.',
+        'Lakukan Blowby Test manual (manometer) sebagai cross-check independen.',
+        'Bila sensor sehat tetapi blowby tetap tinggi, lanjutkan analisis keausan ring/liner via SOS (Fe/Cr).'
+      ]
+    },
+    DHT3KX: {
+      system: 'Powertrain — Transmission',
+      title: 'T/M main pressure sensor failure',
+      likely: [
+        'Sensor tekanan main transmisi rusak / kabel putus',
+        'Konektor sensor lembab atau korosi',
+        'Tekanan transmisi benar-benar tidak normal (sensor bekerja, sistem bermasalah)'
+      ],
+      actions: [
+        'VERIFIKASI / GANTI sensor tekanan main transmisi sebelum menindaklanjuti tmMainPressMax/Ave.',
+        'Ukur tekanan main dengan manometer mekanis sebagai pembanding.',
+        'Periksa level & kondisi oli transmisi serta filter.',
+        'Bila tekanan terukur memang menyimpang, evaluasi pompa & relief valve transmisi.'
+      ]
+    },
+    DBB6KP: {
+      system: 'VHMS — Sistem Kelistrikan',
+      title: 'Abnormality in 24V source system (VHMS)',
+      likely: [
+        'Tegangan suplai 24V ke modul VHMS tidak stabil / di luar rentang',
+        'Ground VHMS lemah atau korosi',
+        'Fuse/relay suplai logger bermasalah, atau baterai melemah'
+      ],
+      actions: [
+        'PERIKSA suplai 24V & ground modul VHMS SEBELUM mempercayai SELURUH data telemetri unit ini.',
+        'Ukur tegangan pada terminal modul VHMS saat mesin hidup & mati.',
+        'Periksa kualitas ground, fuse, dan relay suplai logger.',
+        'Analisis VHMS dianggap TIDAK LAYAK sampai suplai normal kembali (tandai unit: DATA TIDAK LAYAK).'
+      ]
+    },
+    DBBRKR: {
+      system: 'VHMS — Komunikasi',
+      title: 'CAN-NET sys (J1939) Error',
+      likely: [
+        'Bus CAN/J1939 terganggu — terminasi salah atau resistansi tidak sesuai',
+        'Harness CAN longgar, terkelupas, atau tertekuk',
+        'Modul ECU/node pada bus bermasalah atau alamat duplikat'
+      ],
+      actions: [
+        'PERIKSA integritas bus CAN (resistansi terminasi 60 Ω, kondisi harness) SEBELUM mempercayai data telemetri unit ini.',
+        'Periksa konektor CAN pada ECU, modul VHMS, dan node terkait.',
+        'Cek apakah node lain pada bus juga melaporkan error (menentukan apakah ECU atau bus).',
+        'Data VHMS dianggap TIDAK LAYAK selama kegagalan komunikasi berulang/masih aktif.'
+      ]
+    },
+    DBBQKR: {
+      system: 'VHMS — Komunikasi',
+      title: 'KOM-net communication failure',
+      likely: [
+        'Jaringan komunikasi KOM-net terputus / tidak stabil',
+        'Modul komunikasi VHMS bermasalah',
+        'Antena/kanal transmisi data terganggu'
+      ],
+      actions: [
+        'PERIKSA jaringan & modul komunikasi KOM-net SEBELUM mempercayai kelengkapan data telemetri unit ini.',
+        'Pastikan modul komunikasi mendapat suplai & ground yang baik.',
+        'Verifikasi data yang terkirim tidak hilang sebagian (gap waktu pada trend).',
+        'Data VHMS dianggap TIDAK LAYAK bila kegagalan komunikasi masih aktif.'
+      ]
+    },
+    MFA0: {
+      system: 'VHMS — Umum',
+      title: 'Manual Trigger',
+      likely: [
+        'Pemicu manual oleh operator/teknisi (bukan kegagalan komponen)',
+        'Unduhan data dipicu manual saat pengambilan sampel'
+      ],
+      actions: [
+        'Tidak perlu tindakan perbaikan — ini catatan pemicu manual.',
+        'Gunakan sebagai penanda waktu untuk mengaitkan aktivitas pemeriksaan dengan data telemetri.'
+      ]
+    },
+
+    /* =====================================================================
+     * [PC2000 2026-10-10 — T5] KODE FAULT EXCAVATOR PC2000.
+     * =====================================================================
+     * Sumber: `fault0.CSV` SN 20020 (PC2000-8). 34 kode distinct; 24 di
+     * antaranya sebelumnya TIDAK punya entri -> nol rekomendasi tindakan
+     * (tampil sebagai kode mentah saja).
+     *
+     * ⚠ HURUF BESAR/KECIL BERMAKNA (lihat `faultEntry()` T7).
+     *   `DGT6KA` = RBF (Right-Bank Front)  vs  `dGT6KA` = RBR (Right-Bank Rear)
+     *   `DGT5KB` = LBF (Left-Bank Front)   vs  `dGT5KB` = LBR (Left-Bank Rear)
+     *
+     * Prinsip penulisan (sama dengan entri HD785/D375A di atas):
+     *   - Sensor rusak -> tindakan UTAMA adalah verifikasi/ganti sensor
+     *     SEBELUM menindaklanjuti nilai parameter (gerbang kualitas data).
+     *   - Alarm nilai (High Exhaust Temp, Overheat, Blowby) -> yang diperiksa
+     *     adalah SEBAB dari nilai tinggi, bukan sensornya.
+     * ===================================================================== */
+
+    /* --- Exhaust temp per grup silinder (komplemen FAULT_SENSOR_MAP) --- */
+    'dGT5KB': {
+      system: 'Engine — Exhaust Temperature',
+      title: 'Exhaust Temp. Sensor LBR Failure (Left-Bank Rear)',
+      likely: [
+        'Sensor suhu gas buang LBR (kiri-belakang) rusak / intermiten',
+        'Harness sensor tersenggol komponen panas atau ground tidak stabil',
+        'Konektor sensor lembab / korosi'
+      ],
+      actions: [
+        'VERIFIKASI / GANTI sensor suhu gas buang LBR sebelum menindaklanjuti lrExhOver700/750/800 — nilainya DIKECUALIKAN dari skor selama fault aktif.',
+        'Periksa jalur harness dari panas & gesekan; rapikan pengikat kabel.',
+        'Bandingkan pembacaan 4 grup (LBF/LBR/RBF/RBR) saat idle — satu grup menyimpang jauh menandakan sensor.',
+        'Bila sensor sudah sehat, baru evaluasi keseimbangan pembakaran bank kiri.'
+      ]
+    },
+    'dGT6KA': {
+      system: 'Engine — Exhaust Temperature',
+      title: 'Exhaust Temp. Sensor RBR Failure (Right-Bank Rear)',
+      likely: [
+        'Sensor suhu gas buang RBR (kanan-belakang) rusak / intermiten',
+        'Harness sensor tersenggol komponen panas atau ground tidak stabil',
+        'Konektor sensor lembab / korosi'
+      ],
+      actions: [
+        'VERIFIKASI / GANTI sensor suhu gas buang RBR sebelum menindaklanjuti rrExhOver700/750/800.',
+        'Periksa jalur harness dari panas & gesekan.',
+        'Bandingkan pembacaan 4 grup (LBF/LBR/RBF/RBR) saat idle.',
+        'Bila sensor sudah sehat, baru evaluasi keseimbangan pembakaran bank kanan.'
+      ]
+    },
+    'f@BYNS': {
+      system: 'Engine — Exhaust Temperature',
+      title: 'High LBR Cylinder Exhaust Temp (ALARM NILAI)',
+      likely: [
+        'Beban pembakaran berlebih pada grup LBR (kiri-belakang)',
+        'Injektor grup LBR tidak seimbang / nozzel tersumbat',
+        'Pendinginan tidak merata atau EGR/air intake bermasalah di grup itu',
+        'Bila sensor LBR juga fault (dGT5KB) — nilai ini TIDAK dapat dipercaya'
+      ],
+      actions: [
+        'CEK dulu apakah `dGT5KB`/`DGT5KA` aktif — bila ya, ini ALARM PALSU dari sensor rusak; perbaiki sensornya lebih dahulu.',
+        'Bila sensor sehat: periksa injektor & kompresi grup LBR, bandingkan dengan 3 grup lain.',
+        'Periksa kebersihan radiator/aftercooler & meratanya aliran udara pendingin.',
+        'Kurangi beban kerja sementara sampai suhu grup kembali merata.'
+      ]
+    },
+    'f@BYNR': {
+      system: 'Engine — Exhaust Temperature',
+      title: 'Very High LBR Cylinder Exhaust Temp (ALARM NILAI)',
+      likely: [
+        'Overheat nyata grup LBR — risiko kerusakan valve/piston grup tersebut',
+        'Injektor grup LBR over-fuelling / nozzel bocor',
+        'Sensor LBR rusak-tinggi (stuck-high) sehingga alarm terus berbunyi',
+        'Bila sensor LBR juga fault (dGT5KB) — nilai ini TIDAK dapat dipercaya'
+      ],
+      actions: [
+        'PRIORITAS: pastikan dulu apakah `dGT5KB` aktif. Bila ya, alarm ini TIDAK dapat dipercaya — ganti sensor LBR, jangan turun mesin.',
+        'Bila sensor sehat: HENTIKAN operasi berbeban & periksa injektor grup LBR segera.',
+        'Periksa endoskopi (borescope) grup LBR bila alarm berulang dengan sensor sehat.',
+        'Catat durasi alarm — paparan lama di atas 800 °C dapat merusak valve seat.'
+      ]
+    },
+    'B@BCNS': {
+      system: 'Cooling',
+      title: 'Engine Water Overheat',
+      likely: [
+        'Level coolant rendah / kebocoran sistem pendingin',
+        'Radiator tersumbat debu/kotoran atau fan pendingin lemah',
+        'Thermostat macet / water pump lemah',
+        'Beban operasi berlebih pada lingkungan panas'
+      ],
+      actions: [
+        'HENTIKAN operasi & biarkan mesin mendingin sebelum membuka tutup radiator.',
+        'Periksa level & kondisi coolant; cari kebocoran pada selang/radiator.',
+        'Bersihkan inti radiator dari debu & kotoran (pembersihan berkala di area berdebu).',
+        'Uji thermostat & water pump; periksa tegangan/tali kipas.',
+        'Bila berulang, periksa sensor suhu coolant agar tidak salah baca.'
+      ]
+    },
+    'F@BBZL': {
+      system: 'Engine — Blowby',
+      title: 'High Blowby Pressure',
+      likely: [
+        'Keausan ring piston / cylinder liner',
+        'Crankcase breather tersumbat sehingga tekanan blowby terukur naik',
+        'Kondisi ini juga sering muncul pada unit berduty berat (beban tinggi terus-menerus)'
+      ],
+      actions: [
+        'Periksa & bersihkan crankcase breather sebelum menyimpulkan keausan mesin.',
+        'Ukur blowby dengan alat kalibrasi; bandingkan dengan spesifikasi model.',
+        'Bila blowby tinggi disertai konsumsi oli meningkat & asap berlebih, siapkan rencana overhaul bertahap.',
+        'CATATAN: muncul bersama `f@BYNR`/`f@BYNS` (beban termal tinggi) — nilai bersamanya memperkuat dugaan kelelahan thermal.'
+      ]
+    },
+    'CA115': {
+      system: 'Engine — Sensor Speed',
+      title: 'Eng. Ne and Backup Speed Sensor Error',
+      likely: [
+        'Sensor putaran mesin (Ne) atau sensor cadangan gagal / kotor',
+        'Harness atau konektor sensor bergesekan / lembab',
+        'Celah (gap) sensor ke roda gigi tidak tepat'
+      ],
+      actions: [
+        'VERIFIKASI pembacaan engSpeed sebelum mempercayai data putaran mesin.',
+        'Periksa konektor & harness kedua sensor; bersihkan bila kotor.',
+        'Periksa & setel celah sensor ke roda gigi sesuai spesifikasi.',
+        'Bila sensor cadangan ikut gagal, ganti agar proteksi over-speed tetap aktif.'
+      ]
+    },
+
+    /* --- Hidrolik: filter, relief, PPC, EPC, komunikasi pompa --- */
+    '6014NX': {
+      system: 'Hydraulic',
+      title: 'Hydraulic Oil Filter Clogging',
+      likely: [
+        'Elemen filter hidrolik tersumbat (interval ganti terlampaui)',
+        'Kontaminasi/partikel dari komponen aus masuk ke sirkuit',
+        'Oli hidrolik terdegradasi / viskositas tidak sesuai'
+      ],
+      actions: [
+        'GANTI elemen filter hidrolik; catat apakah penggantian sebelumnya terlalu lama.',
+        'Periksa sumbatan berulang — bila sering, uji kandungan partikel oli (SOS) untuk mencari sumber keausan.',
+        'Periksa kebersihan breather tangki hidrolik & pastikan tidak ada kebocoran masuknya debu.',
+        'Catat jam penggantian filter sebagai basis perbandingan berkala.'
+      ]
+    },
+    '7@HCZL': {
+      system: 'Hydraulic',
+      title: 'VR2 / P2F Relief Pressure Abnormality',
+      likely: [
+        'Setelan relief valve VR2 (sirkuit pompa 2F) menyimpang',
+        'Relief valve macet / spring lemah / seal bocor',
+        'Tekanan pompa 2F tidak stabil sehingga relief bekerja tidak tepat'
+      ],
+      actions: [
+        'UJI tekanan sirkuit pompa 2F & bandingkan dengan spesifikasi.',
+        'Periksa relief valve VR2: kebersihan, spring, dan seal-nya.',
+        'Bila menyertai pressure drop pompa 2F, periksa juga pompa & EPC terkait.',
+        'Setel ulang relief sesuai spesifikasi setelah komponen terbukti baik.'
+      ]
+    },
+    'DXAAKA': {
+      system: 'Hydraulic — EPC',
+      title: 'P1F EPC Solenoid Open Circuit',
+      likely: ['Solenoid EPC pompa 1F putus / konektor lepas', 'Harness EPC terputus atau korosi'],
+      actions: ['Periksa kondisi & kontinuitas solenoid EPC pompa 1F.', 'Periksa konektor/harness EPC dari korosi & gesekan.', 'Bila solenoid putus, ganti sebelum menilai tekanan pompa 1F.']
+    },
+    'DXABKA': {
+      system: 'Hydraulic — EPC',
+      title: 'P1R EPC Solenoid Open Circuit',
+      likely: ['Solenoid EPC pompa 1R putus / konektor lepas', 'Harness EPC terputus atau korosi'],
+      actions: ['Periksa kondisi & kontinuitas solenoid EPC pompa 1R.', 'Periksa konektor/harness EPC dari korosi & gesekan.', 'Bila solenoid putus, ganti sebelum menilai tekanan pompa 1R.']
+    },
+    'DXACKA': {
+      system: 'Hydraulic — EPC',
+      title: 'P2F EPC Solenoid Open Circuit',
+      likely: ['Solenoid EPC pompa 2F putus / konektor lepas', 'Harness EPC terputus atau korosi'],
+      actions: ['Periksa kondisi & kontinuitas solenoid EPC pompa 2F.', 'Periksa konektor/harness EPC dari korosi & gesekan.', 'Bila solenoid putus, ganti sebelum menilai tekanan pompa 2F.']
+    },
+    'DXADKA': {
+      system: 'Hydraulic — EPC',
+      title: 'P2R EPC Solenoid Open Circuit',
+      likely: ['Solenoid EPC pompa 2R putus / konektor lepas', 'Harness EPC terputus atau korosi'],
+      actions: ['Periksa kondisi & kontinuitas solenoid EPC pompa 2R.', 'Periksa konektor/harness EPC dari korosi & gesekan.', 'Bila solenoid putus, ganti sebelum menilai tekanan pompa 2R.']
+    },
+    'dA25KP': {
+      system: 'Hydraulic — EPC',
+      title: 'Pump2 Sensor Supply Voltage Low Error',
+      likely: [
+        'Tegangan suplai sensor pompa 2 terlalu rendah (bukan sensor itu sendiri)',
+        'Korsleting / beban berlebih pada jalur suplai sensor',
+        'Ground atau suplai modul kontrol bermasalah'
+      ],
+      actions: [
+        'UKUR tegangan suplai 5V sensor pompa 2 — bila di bawah spesifikasi, JANGAN menyalahkan sensor dulu.',
+        'Periksa korsleting pada jalur suplai & konektor.',
+        'Periksa ground modul kontrol.',
+        'Nilai parameter pump2F/pump2R TIDAK dapat dipercaya selama fault ini aktif.'
+      ]
+    },
+    'DHS8KX': {
+      system: 'Hydraulic — PPC',
+      title: 'Boom Raise PPC Pressure Sensor Abnormality',
+      likely: ['Sensor tekanan PPC boom-raise rusak / drift', 'Konektor lembab atau harness bermasalah'],
+      actions: ['Uji sensor tekanan PPC boom-raise; bandingkan dengan pressure gauge.', 'Periksa konektor & harness dari kelembapan.', 'Bila sensor menyimpang, ganti sebelum menilai respons valve boom.']
+    },
+    'DHS9KX': {
+      system: 'Hydraulic — PPC',
+      title: 'Boom Lower PPC Pressure Sensor Abnormality',
+      likely: ['Sensor tekanan PPC boom-lower rusak / drift', 'Konektor lembab atau harness bermasalah'],
+      actions: ['Uji sensor tekanan PPC boom-lower; bandingkan dengan pressure gauge.', 'Periksa konektor & harness dari kelembapan.', 'Bila sensor menyimpang, ganti sebelum menilai respons valve boom.']
+    },
+    'DHS3KX': {
+      system: 'Hydraulic — PPC',
+      title: 'Arm Dig PPC Pressure Sensor Abnormality',
+      likely: ['Sensor tekanan PPC arm-dig rusak / drift', 'Konektor lembab atau harness bermasalah'],
+      actions: ['Uji sensor tekanan PPC arm-dig; bandingkan dengan pressure gauge.', 'Periksa konektor & harness dari kelembapan.', 'Bila sensor menyimpang, ganti sebelum menilai respons valve arm.']
+    },
+    'DHSCKX': {
+      system: 'Hydraulic — PPC',
+      title: 'Arm Dump PPC Pressure Sensor Abnormality',
+      likely: ['Sensor tekanan PPC arm-dump rusak / drift', 'Konektor lembab atau harness bermasalah'],
+      actions: ['Uji sensor tekanan PPC arm-dump; bandingkan dengan pressure gauge.', 'Periksa konektor & harness dari kelembapan.', 'Bila sensor menyimpang, ganti sebelum menilai respons valve arm.']
+    },
+    'DHS4KX': {
+      system: 'Hydraulic — PPC',
+      title: 'Bucket Curl PPC Pressure Sensor Abnormality',
+      likely: ['Sensor tekanan PPC bucket-curl rusak / drift', 'Konektor lembab atau harness bermasalah'],
+      actions: ['Uji sensor tekanan PPC bucket-curl; bandingkan dengan pressure gauge.', 'Periksa konektor & harness dari kelembapan.', 'Bila sensor menyimpang, ganti sebelum menilai respons valve bucket.']
+    },
+    'DHSDKX': {
+      system: 'Hydraulic — PPC',
+      title: 'Bucket Dump PPC Pressure Sensor Abnormality',
+      likely: ['Sensor tekanan PPC bucket-dump rusak / drift', 'Konektor lembab atau harness bermasalah'],
+      actions: ['Uji sensor tekanan PPC bucket-dump; bandingkan dengan pressure gauge.', 'Periksa konektor & harness dari kelembapan.', 'Bila sensor menyimpang, ganti sebelum menilai respons valve bucket.']
+    },
+    'DHSAKX': {
+      system: 'Hydraulic — PPC',
+      title: 'Swing Right PPC Pressure Sensor Abnormality',
+      likely: ['Sensor tekanan PPC swing-right rusak / drift', 'Konektor lembab atau harness bermasalah'],
+      actions: ['Uji sensor tekanan PPC swing-right; bandingkan dengan pressure gauge.', 'Periksa konektor & harness dari kelembapan.', 'Bila sensor menyimpang, ganti sebelum menilai respons swing.']
+    },
+    'DHSBKX': {
+      system: 'Hydraulic — PPC',
+      title: 'Swing Left PPC Pressure Sensor Abnormality',
+      likely: ['Sensor tekanan PPC swing-left rusak / drift', 'Konektor lembab atau harness bermasalah'],
+      actions: ['Uji sensor tekanan PPC swing-left; bandingkan dengan pressure gauge.', 'Periksa konektor & harness dari kelembapan.', 'Bila sensor menyimpang, ganti sebelum menilai respons swing.']
+    },
+    'DA2TMC': {
+      system: 'Hydraulic — Komunikasi',
+      title: 'Pump Comm. ECM R/B Abnormality',
+      likely: [
+        'Komunikasi data modul pompa terputus sesaat (bukan kerusakan pompa)',
+        'Konektor CAN modul pompa lepas/korosi atau ground tidak stabil'
+      ],
+      actions: [
+        'Periksa konektor & harness komunikasi modul pompa dari korosi/kelembapan.',
+        'Periksa ground & suplai modul pompa.',
+        'Bila intermiten dan jarang, catat saja — namun bila sering, periksa modul kontrol pompa.',
+        'CATATAN: ini BUKAN unit-wide; hanya data pompa yang berisiko tidak lengkap.'
+      ]
+    },
+
+    /* --- Brake (swing) --- */
+    'DW45KA': {
+      system: 'Brake — Swing',
+      title: 'Swing Brake Solenoid Open Circuit',
+      likely: ['Solenoid rem swing putus / konektor lepas', 'Harness rem swing terputus atau korosi'],
+      actions: [
+        'Periksa kontinuitas solenoid rem swing & konektornya.',
+        'Periksa harness dari gesekan/korosi.',
+        'Bila solenoid putus, ganti — rem swing berperan pada keselamatan saat parkir di permukaan miring.'
+      ]
+    },
+    'DW45KB': {
+      system: 'Brake — Swing',
+      title: 'Swing Brake Solenoid Short Circuit',
+      likely: ['Solenoid rem swing korsleting', 'Harness terjepit / isolasi terkelupas'],
+      actions: [
+        'Periksa korsleting pada solenoid rem swing & harness.',
+        'Isolasi/rapikan harness yang terjepit.',
+        'Ganti solenoid bila korsleting berasal dari dalam kumparan.',
+        'Verifikasi fungsi rem swing setelah perbaikan.'
+      ]
+    },
+
+    /* --- Auto grease --- */
+    'DHPSKX': {
+      system: 'Greasing — Auto Grease',
+      title: 'Auto Grease Press Sensor Abnormality',
+      likely: ['Sensor tekanan pengukur grease rusak / drift', 'Suplai grease habis sehingga tekanan tidak terbentuk'],
+      actions: [
+        'CEK level grease lebih dahulu — sensor ini sering "error" hanya karena grease habis.',
+        'Isi/bersihkan tangki & pastikan pompa mengisi tekanan.',
+        'Bila grease cukup namun tekanan tetap tidak wajar, ganti sensor tekanan.',
+        'Bandingkan dengan fault `8800ZG`/`DWA5KA` untuk mengetahui apakah masalah pada sensor atau sistem grease.'
+      ]
+    },
+    'DWA5KA': {
+      system: 'Greasing — Auto Grease',
+      title: 'Auto Grease Solenoid Open Circuit',
+      likely: ['Solenoid pompa auto-grease putus / konektor lepas', 'Harness auto-grease terputus'],
+      actions: [
+        'Periksa kontinuitas solenoid & konektor auto-grease.',
+        'Periksa harness dari gesekan/korosi.',
+        'Bila putus, ganti — tanpa solenoid, pelumasan otomatis berhenti dan titik grease bisa kering.'
+      ]
+    },
+    '8800ZG': {
+      system: 'Greasing — Auto Grease',
+      title: 'Auto Grease Abnormality',
+      likely: [
+        'Sistem pelumasan otomatis gagal menyelesaikan siklus',
+        'Grease habis / saluran tersumbat sehingga tekanan tidak tercapai',
+        'Pompa atau distributor auto-grease bermasalah'
+      ],
+      actions: [
+        'CEK level & jenis grease (kekentalan salah dapat memicu alarm).',
+        'Periksa saluran & fitting yang tersumbat.',
+        'Uji siklus pompa auto-grease & tekanannya.',
+        'Lumasi manual titik kritis sampai sistem auto-grease diperbaiki.'
+      ]
+    },
+
+    /* --- Komunikasi & lain-lain --- */
+    'DAFRMC': {
+      system: 'VHMS — Komunikasi',
+      title: 'CAN Disconnected (Monitor Detected)',
+      likely: [
+        'Bus CAN terputus sesaat — MONITOR kehilangan data seluruh kanal',
+        'Konektor CAN longgar / terminasi bus bermasalah'
+      ],
+      actions: [
+        'PERIKSA jaringan CAN & terminasi bus — SELURUH data telemetri unit ini berisiko tidak lengkap.',
+        'Periksa konektor utama & harness CAN dari kelembapan.',
+        'Verifikasi tidak ada gap waktu pada trend setelah kejadian.',
+        'Bila berulang, catat sebagai masalah integritas data (data tidak layak untuk keputusan).'
+      ]
+    },
+    'DY2FMA': {
+      system: 'Lain-lain — Wiper',
+      title: 'Upper Wiper Working Abnormality',
+      likely: ['Motor/linkage wiper atas macet atau motor lemah', 'Suplai/daya wiper bermasalah'],
+      actions: [
+        'Periksa motor & linkage wiper atas; bersihkan/lumasi mekanisme.',
+        'Periksa sekring/daya wiper.',
+        'Bila unit beroperasi di area hujan/debu, perbaikan penting untuk visibilitas operator.',
+        'CATATAN: TIDAK memengaruhi data telemetri apa pun — bobot prioritas rendah.'
+      ]
+    }
+  };
+
+  /** Cari entri KB untuk sebuah KODE FAULT (bukan key parameter). */
+  function faultEntry(code) {
+    // [PC2000 2026-10-10 — T7] JANGAN paksa UPPERCASE.
+    // ------------------------------------------------------------------
+    // Kode fault Komatsu CASE-SENSITIVE dan perbedaannya BERMAKNA. Terbukti
+    // di `fault0.CSV` PC2000 SN 20020: `DGT6KA` = "Exhaust Temp. Sensor RBF
+    // Failure" sedangkan `dGT6KA` = "... RBR Failure" — GRUP SILINDER BERBEDA
+    // (Front vs Rear) di berkas yang SAMA. Versi lama `toUpperCase()` membuat
+    // keduanya bertabrakan sehingga entri pertama menang dan entri kedua
+    // tak pernah terjangkau.
+    //
+    // `FAULT_SENSOR_MAP` (gerbang kualitas data) sudah case-sensitive sejak
+    // awal — di sini disamakan.
+    //
+    // Urutan pencarian: PERSIS dulu (menghormati huruf besar/kecil), BARU
+    // fallback UPPERCASE untuk entri yang memang ditulis huruf besar semua
+    // (mis. `DGT5KA`, `DHE5KB`). Fallback ini menjaga kompatibilitas entri
+    // KB lama yang tidak punya varian huruf kecil.
+    var raw = String(code || '').trim();
+    if (!raw) return null;
+    if (FAULT_KB[raw]) return FAULT_KB[raw];
+    return FAULT_KB[raw.toUpperCase()] || null;
+  }
+
+  /** Rekomendasi tindakan untuk sebuah kode fault. */
+  function recommendFault(code) {
+    var e = faultEntry(code);
+    if (!e) return null;
+    return {
+      code: code,
+      system: e.system,
+      title: e.title,
+      likely: (e.likely || []).slice(),
+      actions: (e.actions || []).slice(),
+      fromKB: true
+    };
+  }
+
   /* ----------------------------------------------------------------------- */
   global.VHMS_KNOWLEDGE = {
     KB: KB,
     IMPACT_OP: IMPACT_OP,
+    // [T7.3] Basis pengetahuan kode fault history
+    FAULT_KB: FAULT_KB,
+    faultEntry: faultEntry,
+    recommendFault: recommendFault,
     recommend: recommend,
     findEntry: findEntry,
     impactOperational: impactOperational
