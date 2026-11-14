@@ -1,0 +1,1506 @@
+/* =========================================================================
+ * fuel.css — Fuel Trending Analysis (modul MANDIRI)
+ * -------------------------------------------------------------------------
+ * [FUEL 2026-10-28] Kartu Baseline interaktif + legenda/rumus waterfall.
+ *
+ * Hanya memakai token tema yang SUDAH ADA (css/vhms-dashboard.css :root).
+ * Jangan menulis warna/nilai tetap di sini: tema gelap/terang harus ikut
+ * berlaku tanpa menyentuh berkas ini.
+ * ========================================================================= */
+
+.fuel-src-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-left: auto;
+}
+.fuel-generate-status {
+  flex: 1 0 100%;
+  margin: 2px 0 0;
+  text-align: right;
+  color: var(--text-dim);
+}
+
+/* ---------- Catatan Batasan (di dalam kartu Trending Fuel Ratio List) ----
+ * Dulu menempel pada .alert-banner global (justify-content: space-between
+ * dicampur teks+<strong> membuat spasi antarbaris melebar). Sekarang blok
+ * mandiri: judul rapat di kiri, teks mengalir rapi dengan line-height
+ * padat dan baris terakhir tidak menggantung satu kata. */
+.fuel-limits {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: flex-start;
+  gap: 4px 8px;
+  margin: 0 0 12px;
+  padding: 9px 12px;
+  border: 1px solid var(--border-2);
+  border-left: 3px solid var(--accent);
+  border-radius: 8px;
+  background: var(--card-2);
+  font-size: 12px;
+  line-height: 1.55;
+  color: var(--text-dim);
+}
+.fuel-limits .fuel-limits-title {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  white-space: nowrap;
+  flex: 0 0 auto;
+}
+.fuel-limits .fuel-limits-title strong { color: var(--text); }
+.fuel-limits .fuel-limits-title i { color: var(--accent); }
+.fuel-limits .fuel-limits-body {
+  flex: 1 1 420px;
+  min-width: 0;
+  text-wrap: pretty;
+}
+.fuel-limits .fuel-limits-body strong { color: var(--text); }
+.fuel-limits .fuel-limits-flag {
+  font-weight: 700;
+  color: #f87171;
+  white-space: nowrap;
+}
+
+.fuel-formula-legend {
+  display: block;
+  border-left-color: #22d3ee;
+  background: var(--card-2);
+}
+.fuel-formula-legend .fuel-limits-title {
+  margin-bottom: 6px;
+}
+
+/* ---------- Legenda yang bisa dilipat (<details>, tanpa JS) -------------
+ * [2026-10-29] Legenda setinggi satu layar mendorong panel pembanding di
+ * bawahnya keluar dari pandangan. Dipakai <details>/<summary> supaya
+ * buka-tutup tetap jalan tanpa JS, bisa diakses keyboard, dan tetap terbuka
+ * saat Ctrl+F / cetak pada peramban modern. */
+.fuel-formula-legend > summary {
+  cursor: pointer;
+  list-style: none;
+  margin-bottom: 0;
+  /* .fuel-limits-title memakai white-space:nowrap; di summary yang selebar
+     panel itu membuat "hint" terdorong keluar pada layar sempit. */
+  white-space: normal;
+  flex-wrap: wrap;
+}
+.fuel-formula-legend > summary::-webkit-details-marker { display: none; }
+.fuel-formula-legend > summary::after {
+  content: '\f078';                 /* fa-chevron-down */
+  font-family: 'Font Awesome 6 Free';
+  font-weight: 900;
+  margin-left: auto;
+  font-size: 10px;
+  color: var(--text-mute);
+  transition: transform .15s ease;
+}
+.fuel-formula-legend[open] > summary::after { transform: rotate(180deg); }
+.fuel-formula-legend[open] > summary { margin-bottom: 8px; }
+.fuel-formula-legend > summary:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+.fuel-legend-hint {
+  font-weight: 400;
+  font-size: 10.5px;
+  color: var(--text-mute);
+}
+
+/* Baris sampel — satu sumber angka untuk SEMUA contoh di legenda. */
+.fuel-sample {
+  margin: 0 0 10px;
+  padding: 8px 10px;
+  border: 1px dashed var(--border-2);
+  border-radius: 6px;
+  background: var(--panel-grad-b, #0b1220);
+  line-height: 1.6;
+}
+.fuel-sample strong { color: var(--text); }
+.fuel-sample code {
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: var(--card-2);
+  color: var(--text);
+  font-size: .95em;
+}
+.fuel-sample small {
+  display: block;
+  margin-top: 4px;
+  color: var(--text-mute);
+}
+.fuel-sample small b { color: var(--text); }
+
+/* "Cara baca" menempel di AKHIR butirnya sendiri, bukan jadi butir terpisah. */
+.fuel-read {
+  display: block;
+  margin-top: 5px;
+  padding-left: 9px;
+  border-left: 2px solid var(--accent);
+  color: var(--text-dim);
+}
+.fuel-read b { color: var(--text); }
+.fuel-read code {
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: var(--panel-grad-b, #0b1220);
+  color: var(--text);
+}
+.fuel-pagination {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  margin: 14px 0 18px;
+  color: var(--text-dim);
+  font-size: 11px;
+}
+.fuel-pagination strong { color: var(--text); }
+.fuel-formula-legend { margin-top: 18px; }
+.fuel-formula-list {
+  margin: 0;
+  padding-left: 22px;
+}
+.fuel-formula-list li {
+  margin: 6px 0;
+}
+.fuel-formula-list code {
+  display: inline-block;
+  margin: 2px 0;
+  padding: 2px 6px;
+  border-radius: 4px;
+  color: var(--text);
+  background: var(--panel-grad-b, #0b1220);
+  font-size: .95em;
+}
+.fuel-formula-list small {
+  display: block;
+  color: var(--text-mute);
+}
+
+/* ---------- Kartu Baseline (klik = detail) ------------------------------ */
+.fuel-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  gap: 12px;
+}
+
+.fuel-card {
+  --fuel-accent: var(--accent);
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  text-align: left;
+  padding: 14px 16px;
+  border-radius: 12px;
+  border: 1px solid var(--border-2, #334155);
+  border-left: 3px solid var(--fuel-accent);
+  background: linear-gradient(160deg, var(--panel-grad-a, #0f172a), var(--panel-grad-b, #0b1220));
+  color: var(--text, #f1f5f9);
+  font: inherit;
+  cursor: pointer;
+  transition: transform .14s ease, border-color .14s ease, box-shadow .14s ease;
+}
+.fuel-card:hover,
+.fuel-card:focus-visible {
+  transform: translateY(-2px);
+  border-color: var(--fuel-accent);
+  box-shadow: 0 6px 18px var(--shadow, rgba(0, 0, 0, .25));
+  outline: none;
+}
+.fuel-card[aria-expanded="true"] {
+  border-color: var(--fuel-accent);
+  border-left-width: 3px;
+}
+
+.fuel-card-label {
+  font-size: 11px;
+  letter-spacing: .5px;
+  text-transform: uppercase;
+  color: var(--text-dim, #a9b6c7);
+}
+
+.fuel-card-value {
+  font-size: 26px;
+  font-weight: 700;
+  line-height: 1.15;
+  font-variant-numeric: tabular-nums;
+  color: var(--fuel-accent);
+}
+.fuel-card-value small {
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--text-mute, #9aa8ba);
+  margin-left: 5px;
+}
+
+.fuel-card-meta,
+.fuel-card-note {
+  font-size: 11px;
+  color: var(--text-mute, #9aa8ba);
+}
+
+.fuel-card-flag { color: var(--amber, #f59e0b); }
+
+.fuel-card-detail {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px dashed var(--border-2, #334155);
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--text-dim, #a9b6c7);
+  font-variant-numeric: tabular-nums;
+}
+
+.fuel-card-eq {
+  display: inline-block;
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  font-size: 11px;
+  color: var(--fuel-accent);
+  word-break: break-word;
+}
+
+.fuel-card-divider {
+  height: 1px;
+  background: var(--border, #1e293b);
+  margin: 16px 0 12px;
+}
+
+/* ---------- Legenda & rumus waterfall ----------------------------------- */
+.fuel-formula-help {
+  margin-top: 12px;
+  border: 1px solid var(--border, #1e293b);
+  border-radius: 10px;
+  padding: 8px 12px;
+  background: var(--bg-deep, #020617);
+}
+
+.fuel-formula-help > summary {
+  cursor: pointer;
+  font-size: 12px;
+  color: var(--text-dim, #a9b6c7);
+  list-style: none;
+}
+.fuel-formula-help > summary::-webkit-details-marker { display: none; }
+.fuel-formula-help > summary:hover { color: var(--accent, #22d3ee); }
+
+.fuel-help-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 16px;
+  margin-top: 10px;
+}
+
+.fuel-help-title {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: .5px;
+  color: var(--text-mute, #9aa8ba);
+  margin-bottom: 6px;
+}
+
+.fuel-help-list {
+  margin: 0;
+  padding-left: 16px;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--text-dim, #a9b6c7);
+}
+
+.fuel-help-mono li {
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  font-size: 11.5px;
+  color: var(--text, #f1f5f9);
+}
+
+.fuel-swatch {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+  margin-right: 6px;
+  vertical-align: baseline;
+}
+
+/* ---------- Peringatan "belum ada data" --------------------------------- */
+#fuel-need-hint {
+  font-size: 12px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  border: 1px dashed var(--border-2, #334155);
+  color: var(--text-dim, #a9b6c7);
+  background: var(--bg-deep, #020617);
+}
+
+@media (max-width: 640px) {
+  .fuel-card-value { font-size: 22px; }
+}
+
+/* ---------- Tabel Trending Fuel Ratio List: filter & KPI ---------------- */
+.fuel-filter-bar {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 10px;
+}
+
+.fuel-filter {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 10px;
+  border: 1px solid var(--border-2, #334155);
+  border-radius: 8px;
+  background: var(--bg-deep, #020617);
+  color: var(--text-dim, #a9b6c7);
+}
+.fuel-filter:focus-within { border-color: var(--accent, #22d3ee); }
+
+.fuel-filter input,
+.fuel-filter select {
+  background: transparent;
+  border: 0;
+  outline: none;
+  color: var(--text, #f1f5f9);
+  font: inherit;
+  font-size: 12px;
+  min-width: 150px;
+}
+.fuel-filter input::placeholder { color: var(--text-mute, #9aa8ba); }
+.fuel-filter select option { background: var(--bg-deep, #020617); color: var(--text, #f1f5f9); }
+
+.fuel-kpi-bar {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 10px;
+}
+.fuel-kpi {
+  font-size: 11.5px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--border, #1e293b);
+  background: var(--card-2, #1e293b);
+  color: var(--text-dim, #a9b6c7);
+  font-variant-numeric: tabular-nums;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.fuel-kpi strong { color: var(--text, #f1f5f9); }
+.fuel-kpi em { font-style: normal; color: var(--text-mute, #9aa8ba); }
+
+.fuel-filter-dates {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.fuel-filter-date {
+  width: 190px;
+  height: 36px;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+.fuel-filter-date > span {
+  color: var(--text-mute, #9aa8ba);
+  font-size: 10px;
+  white-space: nowrap;
+}
+.fuel-filter-date input[type="date"] {
+  min-width: 0;
+  width: 100%;
+  color-scheme: dark;
+}
+.fuel-filter-bar > .fuel-filter,
+.fuel-filter-dates .fuel-filter {
+  height: 36px;
+  box-sizing: border-box;
+}
+.fuel-filter-dates {
+  height: 36px;
+}
+.fuel-filter-bar > .fuel-kpi-bar {
+  margin: 0 0 0 auto;
+  align-self: center;
+  justify-content: flex-end;
+}
+.fuel-filter-bar > .fuel-kpi-bar .fuel-kpi {
+  height: 28px;
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+}
+.fuel-kpi-bar .fuel-kpi:first-child {
+  color: #86efac;
+  border-color: rgba(34, 197, 94, .45);
+}
+.fuel-kpi-bar .fuel-kpi:nth-child(2) {
+  color: #fdba74;
+  border-color: rgba(249, 115, 22, .5);
+}
+.fuel-kpi-bar .fuel-kpi:nth-child(3) {
+  color: #fca5a5;
+  border-color: rgba(239, 68, 68, .55);
+}
+
+/* Status di tabel mengikuti flag yang sama dengan chip ringkasan. */
+#fuel-ratio-table .badge.is-normal { color: #86efac; }
+#fuel-ratio-table .badge.is-warning { color: #fdba74; }
+#fuel-ratio-table .badge.is-critical { color: #fca5a5; }
+
+/* ---------- BETWEEN: pembanding dua rentang ----------------------------
+ * [2026-10-29] Dua fieldset tanggal + panah. `fieldset` dipakai (bukan div)
+ * supaya <legend> "Sebelum (A)" benar-benar menamai kedua input-nya bagi
+ * pembaca layar, bukan sekadar label visual. */
+.fuel-cmp-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 10px 12px;
+  margin-bottom: 10px;
+}
+.fuel-cmp-ranges {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: stretch;
+  gap: 10px;
+  min-width: 0;
+}
+/* [TATA LETAK 2026-10-30 — permintaan operator]
+ * Fieldset adalah kotak judul + dua input. Panah disejajarkan denganTENGAH
+ * TINGGI kotak (`align-items: stretch` di induk + `align-self: center`),
+ * sehingga ujung panah jatuh tepat di sumbu vertikal kedua fieldset —
+ * bukan menempel ke garis bawah seperti sebelumnya. */
+.fuel-cmp-range {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  /* `min-width: 0` wajib: fieldset punya lebar intrinsik minimum (dari
+   * `legend`) yang tidak bisa ditembus `flex`, sehingga dua kotak ini
+   * meluber keluar panel saat layar sempit. */
+  min-width: 0;
+  padding: 4px 10px 8px;
+  border: 1px solid var(--border-2, #334155);
+  border-radius: 8px;
+  background: var(--card-2);
+}
+/* Judul "Sebelum (A)"/"Sesudah (B)" duduk di GARIS ATAS kotak (perilaku
+ * bawaan legend fieldset), bukan mengambang di atas latar yang terbelah
+ * warna. Latar di belakang teks disamakan dengan latar panel agar garis
+ * border tidak menembus huruf. */
+.fuel-cmp-range > legend {
+  margin-left: 2px;
+  padding: 0 5px;
+  color: var(--accent, #22d3ee);
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: .4px;
+  text-transform: uppercase;
+  line-height: 1.2;
+}
+/* Input tanggal di panel ini TIDAK memakai lebar 190px milik filter tabel:
+ * dua input per kotak membuat panel membengkak, dan kolom tanggal tidak
+ * butuh selebar itu (isinya `dd/mm/yyyy`). 148px cukup untuk angka + ikon
+ * kalender tanpa memotong. */
+.fuel-cmp-range .fuel-filter-date {
+  width: 148px;
+  height: 32px;
+}
+.fuel-cmp-range .fuel-filter-date > span {
+  min-width: 22px;
+}
+.fuel-cmp-range .fuel-filter-date input[type="date"] {
+  font-size: 12px;
+  padding: 0 4px;
+}
+/* Pemisah tipis antara input tanggal akhir dan tombol Reset — keduanya duduk
+ * di kotak yang sama (fieldset "Sesudah (B)"). Tanpa pemisah, Reset terbaca
+ * seperti input ketiga. `align-self: stretch` membuat garisnya setinggi
+ * kotak, bukan setinggi teks label. */
+.fuel-cmp-range-sep {
+  align-self: stretch;
+  width: 1px;
+  margin: 2px 0;
+  background: var(--border-2, #334155);
+  opacity: .6;
+}
+/* [TATA LETAK 2026-10-30] Reset di dalam fieldset: tinggi disamakan dengan
+ * input (32px) supaya garis bawahnya sejajar, dan TIDAK memakai `nowrap`
+ * paksa — saat layar sempit ia boleh turun ke baris kedua di dalam kotak. */
+.fuel-cmp-range > .btn {
+  height: 32px;
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+  flex: 0 0 auto;
+}
+.fuel-cmp-arrow {
+  align-self: center;
+  color: var(--accent);
+  font-size: 13px;
+  line-height: 1;
+  /* `flex` + `justify-content` memberi ruang simetris kiri/kanan: tanpa
+   * ini panah menempel ke fieldset berikutnya karena `gap` hanya 10px. */
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 14px;
+  padding: 0 2px;
+}
+/* Gugus tombol kanan: Reset · Tambah GPS · Lepas · Ekspor CSV.
+ * Semua tombol setinggi baris input (32px) dan berbagi garis dasar yang
+ * sama dengan fieldset tanggal. */
+.fuel-cmp-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  /* Reset kini berada di dalam fieldset "Sesudah (B)", jadi gugus ini
+   * digeser ke kanan agar baris tanggal tetap menempel kiri. */
+  margin-left: auto;
+}
+.fuel-cmp-actions > .btn {
+  height: 32px;
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+.fuel-cmp-actions > .fuel-cmp-gps-bar-label {
+  margin-left: 4px;
+}
+/* `.fuel-kpi-bar` mewarnai chip menurut POSISI (hijau/oranye/merah untuk
+ * Normal/Caution/Over). Di panel ini urutannya berbeda, jadi pewarnaan
+ * posisional dimatikan dan warna ditetapkan lewat kelas vonis. */
+#fuel-cmp-totals .fuel-kpi:first-child,
+#fuel-cmp-totals .fuel-kpi:nth-child(2),
+#fuel-cmp-totals .fuel-kpi:nth-child(3) {
+  color: var(--text-dim);
+  border-color: var(--border, #1e293b);
+}
+#fuel-cmp-totals .fuel-kpi.is-hemat { color: #86efac; border-color: rgba(34, 197, 94, .45); }
+#fuel-cmp-totals .fuel-kpi.is-boros { color: #fca5a5; border-color: rgba(239, 68, 68, .55); }
+#fuel-cmp-totals .fuel-kpi.is-stabil { color: #fdba74; border-color: rgba(249, 115, 22, .5); }
+
+/* [F4 2026-10-29] Keyakinan = jumlah baris di sisi TERLEMAH. Sengaja TIDAK
+ * memakai hijau/kuning/merah: itu warna VONIS, dan keyakinan bukan vonis.
+ * Yang dibedakan hanya ketegasannya — "rendah" dicetak paling redup supaya
+ * angka di sebelahnya tetap yang dibaca lebih dulu. */
+#fuel-cmp-table .fuel-cmp-conf {
+  font-size: 10px;
+  padding: 1px 5px;
+  margin-left: 4px;
+  border-radius: 4px;
+  border: 1px solid var(--border-2, #334155);
+  color: var(--text-mute, #9aa8ba);
+  white-space: nowrap;
+  /* [F4 FIX 2026-10-29] Nilai `confidence` dari renderer berhuruf KAPITAL
+   * (TINGGI/SEDANG/RENDAH), sedangkan kelasnya huruf kecil (is-tinggi).
+   * Tanpa `text-transform` di sini labelnya berteriak sejajar dengan badge
+   * vonis — padahal keyakinan adalah ketegasan, bukan vonis. */
+  text-transform: lowercase;
+  font-variant: small-caps;
+  letter-spacing: .3px;
+}
+#fuel-cmp-table .fuel-cmp-conf.is-tinggi { color: var(--text, #e2e8f0); }
+#fuel-cmp-table .fuel-cmp-conf.is-rendah { border-style: dashed; opacity: .75; }
+
+/* [F5 2026-10-29] Baris kedua kolom "Baris A / B": cakupan hari. Dibuat
+ * lebih kecil & redup agar tidak bersaing dengan jumlah barisnya, tetapi
+ * TETAP TAMPIL — tooltip tidak terbaca di layar sentuh maupun hasil cetak. */
+#fuel-cmp-table .fuel-cmp-cov,
+#fuel-cmp-table .fuel-cmp-subhead {
+  font-size: 9.5px;
+  font-weight: 400;
+  color: var(--text-mute, #9aa8ba);
+  letter-spacing: .2px;
+}
+
+/* [F2 2026-10-29] Penanda bobot di chip "A -> B": lebih kecil & redup supaya
+ * tidak bersaing dengan angkanya, tetapi tetap terbaca tanpa hover. */
+#fuel-cmp-totals .fuel-kpi-basis {
+  font-size: 10px;
+  color: var(--text-mute, #9aa8ba);
+  border-left: 1px solid var(--border-2, #334155);
+  padding-left: 6px;
+}
+
+#fuel-cmp-table .badge.is-normal { color: #86efac; }
+#fuel-cmp-table .badge.is-warning { color: #fdba74; }
+#fuel-cmp-table .badge.is-critical { color: #fca5a5; }
+/* [F3 2026-10-29] "Data tidak cukup" sengaja TIDAK memakai hijau/kuning/
+ * merah: warna vonis menyiratkan ada kesimpulan arah, padahal justru itu
+ * yang ditahan. Abu-abu + garis tepi putus-putus = "belum terukur". */
+#fuel-cmp-table .badge.is-mute {
+  color: var(--text-mute, #9aa8ba);
+  border: 1px dashed var(--border-2, #334155);
+  background: transparent;
+}
+.fuel-cmp-table,
+#fuel-cmp-table {
+  /* [AUTO-WIDTH 2026-10-30] Lebar kolom mengikuti ISI, bukan persentase tetap.
+   *
+   * Sebelumnya `table-layout: fixed` + lebar persen paksa (8 %, 6,8 %, …):
+   * kolom sempit (Δ %) mendapat ruang sama dengan kolom lebar (Hasil),
+   * sehingga "+4,6 %" membuang ruang sementara kalimat Hasil terpotong ke
+   * 3–4 baris. Pembagian 16 angka persen juga HARUS berjumlah tepat 100 %
+   * setiap kali kolom berubah — mudah rusak dan tidak terlihat.
+   *
+   * Sekarang: browser mengukur sendiri dari teks terpanjang tiap kolom.
+   *
+   * `width: auto` (BUKAN `100%` ATAU `max-content`) — ini yang penting.
+   *   - `100%` / `max-content` + `min-width: 100%` membuat browser MEMBAGI
+   *     sisa ruang ke semua kolom, sehingga kolom pendek ikut melebar dan
+   *     auto-layout tidak lagi mengikuti isi (terukur: Δ % 66 px → 79 px,
+   *     Hasil 420 px → 503 px hanya karena layar lebih lebar).
+   *   - `auto` = lebar tabel ditentukan isi kolom, tanpa pembagian sisa.
+   *     Bila isinya lebih sempit dari wadah, tabel TIDAK dipaksa melebar —
+   *     itu memang yang diminta ("menyesuaikan lebar datanya"). */
+  width: auto;
+  border-collapse: collapse;
+  table-layout: auto;
+}
+#fuel-cmp-table th,
+#fuel-cmp-table td {
+  box-sizing: border-box;
+  padding: 9px 10px;
+  vertical-align: middle;
+  /* Isi sel tidak dipatahkan; yang menentukan lebar adalah teks terpanjang. */
+  white-space: nowrap;
+}
+/* [AUTO-WIDTH 2026-10-30] JUDUL boleh membungkus, ISI tidak.
+ *
+ * Tanpa ini, judul dua baris ("Jarak Kosong (km)" + "Empty Drv.Dist.")
+ * diukur sebagai satu baris panjang oleh auto-layout, sehingga kolom itu
+ * memaksa lebar 152 px padahal angkanya hanya "400,0 → 320,0". Hasilnya
+ * tabel melebar 2.094 px untuk isi yang sebenarnya cukup ~1.500 px.
+ *
+ * Dengan `normal` di `th`, browser memakai lebar ISI sebagai penentu utama
+ * dan membungkus judul di dalam lebar itu — persis perilaku yang diminta
+ * ("menyesuaikan lebar datanya"). */
+#fuel-cmp-table th {
+  /* [HEADER 2 BARIS TETAP 2026-10-30] `white-space: nowrap` di judul,
+   * BUKAN `normal`.
+   *
+   * Sebelumnya judul dibiarkan membungkus bebas. Hasil pengukuran nyata:
+   * judul utama jatuh 1–3 baris (mis. "Jarak Kosong (km)" 1 baris,
+   * "Baris From / To" 2 baris), sehingga sub-judulnya berada di y=51, 71,
+   * dan 91 pada SATU baris header — terlihat seperti header berantakan.
+   *
+   * Dengan `nowrap`, setiap judul = TEPAT 1 baris utama + 1 baris
+   * sub-judul (`<br>`), jadi baris pertama & sub SELALU sejajar.
+   * Konsekuensinya tabel sedikit lebih lebar — itu disengaja: kolom
+   * menyesuaikan JUDUL, dan isi angka tetap muat tanpa terlipat. */
+  white-space: nowrap;
+  /* Potongan panjang tidak dipotong paksa di tengah kata. */
+  overflow-wrap: normal;
+  word-break: normal;
+  line-height: 1.25;
+  vertical-align: top;
+  /* 1 baris judul + 1 baris sub-judul + padding 9+9 px. */
+  height: 3.75em;
+}
+/* [HEADER 2026-10-30] Sub-judul: satu baris, kecil, redup.
+ * `display: block` (bukan inline) memastikan ia selalu BARIS KEDUA, tidak
+ * menempel di ujung judul bila judulnya pendek ("Siklus From → To"). */
+#fuel-cmp-table .fuel-cmp-subhead {
+  display: block;
+  white-space: nowrap;
+  line-height: 1.25;
+}
+#fuel-cmp-table td:last-child {
+  /* Kalimat "selisih di dalam pita derau unit (−11,3 % … +12,7 %)" boleh
+   * membungkus, tetapi dibatasi agar tidak menjadi satu baris 600 px. */
+  min-width: 260px;
+  max-width: 420px;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.fuel-cmp-reason {
+  display: inline-block;
+  max-width: 100%;
+  line-height: 1.35;
+}
+#fuel-cmp-table th { text-align: left; }
+#fuel-cmp-table th:first-child,
+#fuel-cmp-table td:first-child { padding-left: 12px; }
+#fuel-cmp-table th:last-child,
+#fuel-cmp-table td:last-child { text-align: left; }
+/* [NO-ZEBRA-BETWEEN 2026-10-30 — permintaan operator]
+ * Tabel perbandingan TIDAK memakai baris belang, SAMA dengan tabel
+ * data Trending Fuel Ratio: setiap baris berlatar transparan, hanya
+ * garis bawah sel (dari `table.data tbody td`) yang memisahkan.
+ * Aturan ini ditulis eksplisit supaya bila kelak ada aturan belang
+ * global (`.data tbody tr:nth-child(even)`), panel ini tidak ikut
+ * berubah tanpa sengaja. `:nth-child(n)` = SEMUA baris. */
+#fuel-cmp-table tbody tr:nth-child(n) > td,
+#fuel-cmp-table tbody tr:nth-child(n) { background-color: transparent; }
+
+#fuel-cmp-table td.fuel-num { text-align: right; }
+
+/* [ALIGN 2026-10-30] Judul kolom angka HARUS sejajar dengan angkanya.
+ * `th { text-align: left }` di atas berlaku untuk SEMUA judul, sehingga
+ * judul kolom pendukung menempel kiri sementara angkanya menempel kanan —
+ * pembaca kehilangan pasangan judul-isi. Ditegaskan di sini untuk SEMUA
+ * kolom angka (3..15), apa pun lebar yang dipilih browser. */
+#fuel-cmp-table th.fuel-num-cell,
+#fuel-cmp-table th:nth-child(n+3):nth-child(-n+15) { text-align: right; }
+
+/* [SUPPORT 2026-10-30] Pasangan From → To di SATU sel. Angka From tebal,
+ * angka To redup: mata membaca "dari berapa ke berapa" tanpa bolak-balik.
+ * `tabular-nums` menjaga digit sejajar antar-baris saat angkanya berganti. */
+.fuel-cmp-pair-v {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 3px;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.fuel-cmp-arrow-v {
+  color: var(--text-mute, #9aa8ba);
+  font-size: 9px;
+  line-height: 1;
+}
+.fuel-cmp-to { color: var(--text, #e2e8f0); }
+
+/* Sel yang datanya belum ada: "\u2014" TIDAK boleh sama tegasnya dengan angka
+ * nol. Nol adalah hasil ukur ("tidak beroperasi"); "\u2014" adalah ketiadaan
+ * angka, dan perbedaan itu harus terbaca tanpa hover. */
+.fuel-cmp-gps-none { color: var(--text-mute, #9aa8ba); cursor: help; }
+
+/* Sparkline elevasi: dua garis mini (From abu-abu, To aksen). Lebar tetap
+ * agar kolom tidak melompat antar-halaman. */
+.fuel-cmp-gps { display: inline-block; line-height: 1.25; }
+.fuel-cmp-sparks {
+  display: flex;
+  gap: 3px;
+  justify-content: flex-end;
+  margin: 2px 0 1px;
+  cursor: help;
+}
+.fuel-cmp-spark { display: block; overflow: visible; }
+.fuel-cmp-spark path {
+  fill: none;
+  stroke-width: 1.4;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+.fuel-cmp-spark.is-from path { stroke: #94a3b8; }
+.fuel-cmp-spark.is-to path { stroke: #22d3ee; }
+
+/* ---------- Data pendukung GPS (bagian dari gugus tombol perbandingan) ---
+ * [TATA LETAK 2026-10-31] Sidebar kanan (`.fuel-sidebar` / `.fuel-layout`)
+ * DIBATALKAN atas laporan operator: kolom 232px itu memakan lebar sehingga
+ * tabel Fuel Ratio & tabel Perbandingan jadi sempit. Kontrol GPS kembali ke
+ * gugus tombol panel perbandingan seperti 2026-10-30. */
+.fuel-cmp-gps-bar-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--text-dim);
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: .3px;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+.fuel-cmp-gps-status {
+  font-size: 11px;
+  color: var(--accent, #22d3ee);
+  min-height: 0;
+  margin: 0 0 8px;
+}
+.fuel-cmp-gps-status:empty { display: none; }
+/* Δ% diberi warna supaya arah perubahan terbaca tanpa membaca badge; tanda
+ * (+/−) TETAP dicetak — warna saja tidak cukup untuk buta warna. */
+.fuel-cmp-delta { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.fuel-cmp-delta.is-down { color: #86efac; }
+.fuel-cmp-delta.is-up { color: #fca5a5; }
+.fuel-cmp-delta.is-flat { color: var(--text-dim); }
+
+@media (max-width: 900px) {
+  .fuel-filter-dates { width: 100%; }
+  .fuel-filter-date { flex: 1 1 180px; }
+  .fuel-filter-bar > .fuel-kpi-bar { width: 100%; justify-content: flex-end; }
+  /* Panel Between: fieldset turun ke lebar penuh, input berbagi ruang. */
+  .fuel-cmp-toolbar { flex-direction: column; align-items: stretch; }
+  .fuel-cmp-range { flex: 1 1 100%; flex-wrap: wrap; }
+  .fuel-cmp-range .fuel-filter-date { flex: 1 1 130px; width: auto; }
+  .fuel-cmp-arrow { display: none; }
+  .fuel-cmp-actions { width: 100%; }
+}
+
+/* Baris terpilih: jelas terlihat unit mana yang sedang dibuka di panel detail. */
+tr.fuel-row-active > td {
+  background: rgba(34, 211, 238, .10);
+  box-shadow: inset 2px 0 0 var(--accent, #22d3ee);
+}
+
+#fuel-ratio-table th[data-fuel-sort] { user-select: none; white-space: nowrap; }
+#fuel-ratio-table th[data-fuel-sort]:hover { color: var(--accent, #22d3ee); }
+
+/* [2026-10-28] Angka tabel ratio 2 desimal, rata kanan, lebar digit tetap. */
+#fuel-ratio-table td.fuel-num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+/* Kolom "Event" (dulu "Result"): daftar observasi singkat — tiap item satu
+   fakta. Daftar polos tanpa peluru agar tidak menambah kebisingan visual. */
+#fuel-ratio-table td.fuel-ratio-result {
+  font-size: 11.5px;
+  color: var(--text-dim, #a9b6c7);
+  line-height: 1.5;
+  min-width: 190px;
+}
+#fuel-ratio-table td.fuel-ratio-result strong { color: var(--text, #f1f5f9); }
+.fuel-event-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.fuel-event-list li + li { margin-top: 1px; }
+/* Satuan kecil di kolom angka (L/jam, L). */
+#fuel-ratio-table td.fuel-num small {
+  font-size: 10px;
+  color: var(--text-mute, #9aa8ba);
+  margin-left: 2px;
+}
+
+
+/* ---------- Baris aksi kartu "Sumber Data" -----------------------------
+ * Tombol (Buka Gerbang Upload VHMS / Kosongkan Data) dirata-kanan. Karena
+ * elemen sebelumnya bisa `hidden`, tanpa `margin-left:auto` tombol akan
+ * menempel kiri setelah teks status disembunyikan. Saat layar sempit ia
+ * turun ke baris sendiri, tetap rata kanan. */
+.fuel-src-actions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  margin-left: auto;
+}
+
+/* ---------- Ringkasan Baseline: baris metrik + chip status ------------- */
+/* [REVISI 2026-10-28] Menggantikan tabel 3 baris + daftar teks polos.
+   Kartu metrik memakai .fuel-card (tampilan seragam dengan kartu di atas),
+   tetapi handler-nya membuka rumus — bukan rentang distribusi. */
+.fuel-metric-row {
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+}
+
+/* Kartu statis tetap bisa diklik, tetapi tidak "meloncat" seperti kartu
+   distribusi (target kliknya membaca, bukan menjelajah). */
+.fuel-card.is-static { cursor: pointer; }
+.fuel-card.is-static:hover,
+.fuel-card.is-static:focus-visible {
+  transform: none;
+  box-shadow: none;
+  border-color: var(--fuel-accent);
+  background: var(--card-2, #1e293b);
+}
+.fuel-card.is-static {
+  gap: 2px;
+  padding: 11px 14px;
+  border-radius: 10px;
+  background: var(--card-2, #1e293b);
+}
+.fuel-card.is-static .fuel-card-value { font-size: 22px; }
+
+.fuel-metric-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.fuel-metric-flag {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: .4px;
+  text-transform: uppercase;
+  color: var(--amber, #f59e0b);
+  border: 1px solid rgba(245, 158, 11, .45);
+  border-radius: 999px;
+  padding: 0 6px;
+}
+.fuel-card-meta strong {
+  color: var(--text, #f1f5f9);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Panel bantuan metrik (disisipkan tepat di bawah baris kartu). */
+.fuel-metric-help {
+  margin-top: 8px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid var(--border-2, #334155);
+  border-left: 3px solid var(--accent, #22d3ee);
+  background: var(--bg-deep, #020617);
+  font-size: 12px;
+  line-height: 1.55;
+}
+.fuel-metric-help-head { margin-bottom: 4px; }
+.fuel-metric-help-text {
+  margin: 6px 0 0;
+  color: var(--text-dim, #a9b6c7);
+}
+
+/* Baris fakta + chip status di bawah kartu metrik. */
+.fuel-summary-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px 16px;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border, #1e293b);
+}
+.fuel-summary-facts {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 8px;
+}
+.fuel-fact {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--border, #1e293b);
+  background: var(--card-2, #1e293b);
+  font-size: 11.5px;
+  color: var(--text-dim, #a9b6c7);
+  white-space: nowrap;
+}
+.fuel-fact i { opacity: .7; }
+.fuel-fact-k { color: var(--text-mute, #9aa8ba); }
+.fuel-fact strong {
+  color: var(--text, #f1f5f9);
+  font-variant-numeric: tabular-nums;
+}
+.fuel-fact-status.is-ok   { border-color: rgba(16, 185, 129, .5); color: #a7f3d0; }
+.fuel-fact-status.is-ok i { color: #34d399; opacity: 1; }
+.fuel-fact-status.is-warn { border-color: rgba(245, 158, 11, .5); color: #fde68a; }
+.fuel-fact-status.is-warn i { color: #f59e0b; opacity: 1; }
+
+.fuel-count-chips { display: inline-flex; gap: 6px; flex-wrap: wrap; }
+.fuel-count-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 9px;
+  border-radius: 999px;
+  border: 1px solid var(--border-2, #334155);
+  background: var(--card-2, #1e293b);
+  color: var(--text-dim, #a9b6c7);
+  font: inherit;
+  font-size: 11.5px;
+  cursor: pointer;
+  transition: background .14s, border-color .14s, color .14s, transform .14s;
+}
+.fuel-count-chip:hover { border-color: var(--text-dim, #a9b6c7); color: var(--text, #f1f5f9); }
+.fuel-count-chip:focus-visible { outline: 2px solid var(--accent, #22d3ee); outline-offset: 1px; }
+.fuel-count-chip strong {
+  color: var(--text, #f1f5f9);
+  font-variant-numeric: tabular-nums;
+}
+.fuel-count-chip-pct {
+  font-size: 10.5px;
+  color: var(--text-mute, #9aa8ba);
+  font-variant-numeric: tabular-nums;
+  min-width: 3ch;
+  text-align: right;
+}
+.fuel-count-chip-dot {
+  width: 8px; height: 8px; border-radius: 50%;
+  display: inline-block; flex: 0 0 auto;
+}
+.fuel-count-chip.is-normal.is-active   { background: #052e16; border-color: #10b981; color: #bbf7d0; }
+.fuel-count-chip.is-warning.is-active  { background: #422006; border-color: #f59e0b; color: #fde68a; }
+.fuel-count-chip.is-critical.is-active { background: #450a0a; border-color: #ef4444; color: #fecaca; }
+.fuel-count-chip.is-active .fuel-count-chip-pct { color: inherit; opacity: .8; }
+
+.fuel-summary-hint {
+  margin: 8px 0 0;
+  font-size: 11px;
+  color: var(--text-mute, #9aa8ba);
+}
+.fuel-summary-hint i { margin-right: 4px; opacity: .7; }
+
+/* ---------- Tabel jendela: angka & status ------------------------------- */
+/* SN di bawah nomor lambung (identitas sekunder, tetap terbaca). */
+.fuel-sn-sub {
+  font-size: 10.5px;
+  color: var(--text-mute, #9aa8ba);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+/* Penanda SN yang BELUM terpetakan ke nomor lambung — jangan disembunyikan:
+   tanpa ini SN (mis. "J30483") akan dikira nomor lambung oleh operator. */
+.fuel-sn-unmapped {
+  display: inline-block;
+  margin-left: 4px;
+  padding: 0 5px;
+  border-radius: 999px;
+  border: 1px solid rgba(245, 158, 11, .5);
+  color: #fde68a;
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: .3px;
+  vertical-align: 1px;
+  cursor: help;
+}
+
+#fuel-window-table td.fuel-num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+#fuel-window-table td.fuel-num-key { color: var(--text, #f1f5f9); font-weight: 600; }
+#fuel-window-table td.fuel-cell-date { white-space: nowrap; font-variant-numeric: tabular-nums; }
+#fuel-window-table tr.fuel-row-flag > td { box-shadow: inset 2px 0 0 rgba(245, 158, 11, .55); }
+#fuel-window-table tbody tr:hover > td { background: rgba(148, 163, 184, .07); }
+
+button.badge.fuel-badge-btn {
+  border: 1px solid transparent;
+  cursor: pointer;
+  font-family: inherit;
+  transition: filter .14s, box-shadow .14s;
+}
+button.badge.fuel-badge-btn:hover { filter: brightness(1.18); }
+button.badge.fuel-badge-btn:focus-visible {
+  outline: 2px solid var(--accent, #22d3ee);
+  outline-offset: 1px;
+}
+button.badge.fuel-badge-btn[aria-pressed="true"] {
+  box-shadow: 0 0 0 2px var(--accent, #22d3ee);
+}
+
+/* ---------- KPI Summary (home) ----------------------------------------- */
+/* [HOME 2026-10-28] Halaman home = KPI + daftar ratio. Kartu KPI dibuat
+   BESAR (angka 24px) karena inilah satu-satunya ringkasan yang dibaca
+   operator sebelum menggulir ke daftar. */
+.fuel-kpi-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 10px;
+}
+
+.fuel-kpi-card {
+  --fuel-accent: var(--text-dim, #a9b6c7);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 11px 14px;
+  border-radius: 10px;
+  border: 1px solid var(--border, #1e293b);
+  border-left: 3px solid var(--fuel-accent);
+  background: var(--card-2, #1e293b);
+  min-width: 0;
+}
+.fuel-kpi-card.is-accent { --fuel-accent: var(--accent, #22d3ee); }
+.fuel-kpi-card.is-warn   { --fuel-accent: var(--amber, #f59e0b); }
+.fuel-kpi-card.is-ok     { --fuel-accent: #34d399; }
+
+.fuel-kpi-card-label {
+  font-size: 10.5px;
+  letter-spacing: .4px;
+  text-transform: uppercase;
+  color: var(--text-mute, #9aa8ba);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.fuel-kpi-card-value {
+  font-size: 24px;
+  font-weight: 700;
+  line-height: 1.15;
+  font-variant-numeric: tabular-nums;
+  color: var(--fuel-accent);
+}
+.fuel-kpi-card-value small {
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--text-mute, #9aa8ba);
+  margin-left: 4px;
+}
+
+.fuel-kpi-card-note {
+  font-size: 11px;
+  line-height: 1.45;
+  color: var(--text-mute, #9aa8ba);
+  word-break: break-word;
+}
+.fuel-kpi-card-note strong { color: var(--text, #f1f5f9); }
+.fuel-kpi-card-note em { font-style: normal; }
+
+.fuel-kpi-legend em {
+  font-style: normal;
+  color: var(--text-dim, #a9b6c7);
+}
+
+/* Batas tafsir: WAJIB terlihat, bukan tooltip. Angka tertinggi/terendah
+   antar unit TIDAK boleh dibaca sebagai vonis (rute/grade berbeda). */
+.fuel-kpi-disclaimer {
+  margin: 10px 0 0;
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--text-mute, #9aa8ba);
+}
+.fuel-kpi-disclaimer i { color: var(--amber, #f59e0b); margin-right: 4px; }
+
+@media (max-width: 640px) {
+  .fuel-kpi-card-value { font-size: 20px; }
+}
+
+/* ==========================================================================
+ * VHMS Intel Mesin & Fuel — Sub-Tab 3 [2026-11-03]
+ * ========================================================================== */
+
+/* ---- 4 KPI Cards Row ---- */
+.vhms-intel-kpi-row {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 12px;
+  padding: 4px 0 8px;
+}
+
+.vhms-intel-kpi-card {
+  background: var(--bg-panel, #1e293b);
+  border: 1px solid var(--border, #334155);
+  border-top: 3px solid var(--kpi-accent, #38bdf8);
+  border-radius: 8px;
+  padding: 14px 16px;
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  transition: box-shadow .15s;
+}
+.vhms-intel-kpi-card:hover {
+  box-shadow: 0 0 0 2px var(--kpi-accent, #38bdf8) 44;
+}
+.vhms-intel-kpi-icon {
+  font-size: 22px;
+  flex-shrink: 0;
+  margin-top: 2px;
+  width: 28px;
+  text-align: center;
+}
+.vhms-intel-kpi-body { flex: 1; min-width: 0; }
+.vhms-intel-kpi-label {
+  font-size: 11px;
+  color: var(--text-dim, #94a3b8);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: .4px;
+  margin-bottom: 4px;
+  line-height: 1.3;
+}
+.vhms-intel-kpi-value {
+  font-size: 22px;
+  font-weight: 700;
+  line-height: 1.1;
+  font-variant-numeric: tabular-nums;
+  color: var(--kpi-accent, #f8fafc);
+}
+.vhms-intel-kpi-value small {
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--text-dim, #94a3b8);
+  margin-left: 3px;
+}
+.vhms-intel-kpi-sub {
+  font-size: 11px;
+  color: var(--text-mute, #64748b);
+  margin-top: 4px;
+  line-height: 1.4;
+}
+
+/* ---- Main content grid (scatter + priority table) ---- */
+#vhms-intel-main-content {
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+
+/* ---- FM Report Modal ---- */
+.fm-report-card table { width: 100%; border-collapse: collapse; }
+.fm-report-card td,
+.fm-report-card th { padding: 6px 10px; font-size: 12px; }
+
+/* ---- Priority badge colors (remap to global vars where possible) ---- */
+.vhms-prio-p1 { color: #ef4444; }
+.vhms-prio-p2 { color: #f59e0b; }
+.vhms-prio-p3 { color: #22c55e; }
+
+/* ---- Responsive breakpoints ---- */
+@media (max-width: 1100px) {
+  .vhms-intel-kpi-row { grid-template-columns: repeat(2, 1fr); }
+  #vhms-intel-main-content { grid-template-columns: 1fr; }
+}
+@media (max-width: 640px) {
+  .vhms-intel-kpi-row { grid-template-columns: 1fr; }
+  .vhms-intel-kpi-value { font-size: 18px; }
+}
+
+/* =========================================================================
+ * KELUARGA TABEL SERAGAM — GPS Route + VHMS Intel Mesin [2026-11-03]
+ * -------------------------------------------------------------------------
+ * Semua tabel di sub-tab Fuel Trending mengikuti konvensi yang sama
+ * dengan tabel referensi "Trending Fuel Ratio List" (#fuel-ratio-table):
+ *   - class="data"  → border-collapse, font-size dari vhms-dashboard.css
+ *   - .table-scroll → overflow-x auto + max-height
+ *   - th.sortable   → cursor pointer + hover glow
+ *   - .sort-ind     → inline (tidak turun ke baris sendiri)
+ *   - td.fuel-num   → text-align right + tabular-nums
+ *   - .fuel-table-count → chip kecil di sebelah judul
+ * ========================================================================= */
+
+/* ------ Sortable header — berlaku di LUAR #table-section ---------------- */
+.gps-priority-table thead th.sortable,
+#vhms-priority-table-inner thead th.sortable,
+#vhms-bin-table-inner thead th.sortable,
+#gps-priority-table thead th.sortable {
+  cursor: pointer;
+  user-select: none;
+  white-space: nowrap;
+}
+.gps-priority-table thead th.sortable:hover,
+#vhms-priority-table-inner thead th.sortable:hover,
+#vhms-bin-table-inner thead th.sortable:hover,
+#gps-priority-table thead th.sortable:hover {
+  color: var(--accent, #22d3ee);
+  background: rgba(34, 211, 238, 0.06);
+}
+.gps-priority-table thead th.sortable:focus-visible,
+#vhms-priority-table-inner thead th.sortable:focus-visible,
+#vhms-bin-table-inner thead th.sortable:focus-visible,
+#gps-priority-table thead th.sortable:focus-visible {
+  outline: 2px solid var(--accent, #22d3ee);
+  outline-offset: -2px;
+}
+
+/* Panah sort HARUS inline — lihat AUDIT-1 di STATUS_PROYEK.md */
+.gps-priority-table thead th .sort-ind,
+#vhms-priority-table-inner thead th .sort-ind,
+#vhms-bin-table-inner thead th .sort-ind,
+#gps-priority-table thead th .sort-ind {
+  display: inline;
+  opacity: 0.45;
+  font-size: 10px;
+  margin-left: 3px;
+}
+.gps-priority-table thead th .sort-ind.active,
+#vhms-priority-table-inner thead th .sort-ind.active,
+#vhms-bin-table-inner thead th .sort-ind.active,
+#gps-priority-table thead th .sort-ind.active {
+  opacity: 1;
+  color: var(--accent, #22d3ee);
+}
+
+/* ------ Kolom angka seragam dengan #fuel-ratio-table -------------------- */
+.gps-priority-table td.fuel-num,
+#vhms-priority-table-inner td.fuel-num,
+#vhms-bin-table-inner td.fuel-num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.gps-priority-table thead th.fuel-num,
+#vhms-priority-table-inner thead th.fuel-num,
+#vhms-bin-table-inner thead th.fuel-num,
+.gps-priority-table thead th.right,
+#vhms-priority-table-inner thead th.right,
+#vhms-bin-table-inner thead th.right {
+  text-align: right !important;
+}
+
+/* Satuan kecil di kolom angka tabel VHMS Intel */
+#vhms-priority-table-inner td.fuel-num small,
+#vhms-bin-table-inner td.fuel-num small {
+  font-size: 10px;
+  color: var(--text-mute, #9aa8ba);
+  margin-left: 2px;
+}
+
+/* ------ Chip jumlah baris di samping judul panel ------------------------ */
+.fuel-table-count {
+  display: inline-block;
+  background: rgba(100, 116, 139, 0.15);
+  color: #94a3b8;
+  border: 1px solid rgba(100, 116, 139, 0.25);
+  border-radius: 10px;
+  font-size: 11px;
+  padding: 1px 8px;
+  margin-left: 8px;
+  font-weight: 500;
+  vertical-align: middle;
+}
+
+/* ------ Baris hover GPS dan VHMS seragam dengan tabel lain -------------- */
+.gps-priority-table tbody tr:hover > td,
+#vhms-priority-table-inner tbody tr:hover > td,
+#vhms-bin-table-inner tbody tr:hover > td {
+  background: rgba(148, 163, 184, 0.07);
+}
+
+/* Baris aktif (klik detail) */
+.gps-priority-table tr.gps-row-active > td {
+  background: rgba(34, 211, 238, 0.08);
+  box-shadow: inset 2px 0 0 var(--accent, #22d3ee);
+}
+
+/* ------ Table-scroll di panel VHMS (priority & bin sudah pakai table-scroll
+          dari vhms-dashboard.css, tapi scoped ke #fuel-area agar tidak
+          bentrok dengan tabel log VHMS) ----------------------------------- */
+#fuel-area .table-scroll {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  max-height: 520px;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(100, 116, 139, .4) transparent;
+}
+#fuel-area .table-scroll::-webkit-scrollbar { width: 8px; height: 8px; }
+#fuel-area .table-scroll::-webkit-scrollbar-track { background: transparent; }
+#fuel-area .table-scroll::-webkit-scrollbar-thumb {
+  background: rgba(100, 116, 139, .4);
+  border-radius: 4px;
+  background-clip: content-box;
+  border: 2px solid transparent;
+}
+#fuel-area .table-scroll::-webkit-scrollbar-thumb:hover {
+  background: rgba(148, 163, 184, .6);
+  background-clip: content-box;
+}
+
+/* min-width agar kolom tidak ambyar saat viewport sempit */
+#fuel-area .table-scroll > table.data { min-width: max-content; }
+
+/* ------ Tata letak & styling spesifik tabel Prioritas & Bin Intel Mesin ------ */
+#vhms-priority-table-inner,
+#vhms-bin-table-inner {
+  width: 100%;
+  table-layout: auto;
+}
+
+#vhms-priority-table-inner th,
+#vhms-priority-table-inner td,
+#vhms-bin-table-inner th,
+#vhms-bin-table-inner td {
+  padding: 8px 12px;
+  vertical-align: middle;
+}
+
+#vhms-priority-table-inner thead th,
+#vhms-bin-table-inner thead th {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.3px;
+  color: #94a3b8;
+  border-bottom: 1px solid rgba(51, 65, 85, 0.8);
+  background: #020617;
+}
+
+#vhms-priority-table-inner tbody td,
+#vhms-bin-table-inner tbody td {
+  font-size: 12px;
+  border-bottom: 1px solid rgba(30, 41, 59, 0.65);
+}
+
+/* Lebar kolom proporsional & rapi tabel prioritas */
+#vhms-priority-table-inner th:nth-child(1),
+#vhms-priority-table-inner td:nth-child(1) { width: 14%; min-width: 110px; } /* Unit */
+#vhms-priority-table-inner th:nth-child(2),
+#vhms-priority-table-inner td:nth-child(2) { width: 11%; min-width: 90px; }  /* Prioritas */
+#vhms-priority-table-inner th:nth-child(3),
+#vhms-priority-table-inner td:nth-child(3) { width: 13%; min-width: 105px; } /* Blowby */
+#vhms-priority-table-inner th:nth-child(4),
+#vhms-priority-table-inner td:nth-child(4) { width: 13%; min-width: 105px; } /* L/GTKM */
+#vhms-priority-table-inner th:nth-child(5),
+#vhms-priority-table-inner td:nth-child(5) { width: 13%; min-width: 105px; } /* Penalti */
+#vhms-priority-table-inner th:nth-child(6),
+#vhms-priority-table-inner td:nth-child(6) { width: 16%; min-width: 130px; } /* Solar Terbuang */
+#vhms-priority-table-inner th:nth-child(7),
+#vhms-priority-table-inner td:nth-child(7) { width: 10%; min-width: 80px; }  /* Kuadran */
+#vhms-priority-table-inner th:nth-child(8),
+#vhms-priority-table-inner td:nth-child(8) { width: 10%; min-width: 80px; }  /* Laporan */
+
+/* Lebar kolom proporsional & rapi tabel degradasi bin */
+#vhms-bin-table-inner th:nth-child(1),
+#vhms-bin-table-inner td:nth-child(1) { width: 34%; min-width: 220px; } /* Kelompok Degradasi */
+#vhms-bin-table-inner th:nth-child(2),
+#vhms-bin-table-inner td:nth-child(2) { width: 12%; min-width: 70px; }  /* N */
+#vhms-bin-table-inner th:nth-child(3),
+#vhms-bin-table-inner td:nth-child(3) { width: 18%; min-width: 120px; } /* Med L/GTKM */
+#vhms-bin-table-inner th:nth-child(4),
+#vhms-bin-table-inner td:nth-child(4) { width: 18%; min-width: 120px; } /* Delta vs Base */
+#vhms-bin-table-inner th:nth-child(5),
+#vhms-bin-table-inner td:nth-child(5) { width: 18%; min-width: 120px; } /* Med L/jam */
+
+/* Zebra striping lembut & badge styling */
+#vhms-priority-table-inner tbody tr:nth-child(even),
+#vhms-bin-table-inner tbody tr:nth-child(even) {
+  background: rgba(15, 23, 42, 0.35);
+}
+
+#vhms-priority-table-inner .badge,
+#vhms-bin-table-inner .badge {
+  display: inline-block;
+  min-width: 28px;
+  text-align: center;
+  padding: 2px 7px;
+  border-radius: 4px;
+  font-size: 11px;
+}
+
+#vhms-priority-table-inner .btn-sm {
+  padding: 3px 8px;
+  font-size: 11px;
+  border-radius: 4px;
+}
+
+/* ------ Panel Intel Mesin: ubah ke full-width (bukan side-by-side)
+          agar tabel prioritas punya ruang yang cukup -------------------- */
+#vhms-intel-main-content {
+  display: flex !important;
+  flex-direction: column;
+  gap: 16px;
+}
+
+/* ------ GPS pager ---------------------------------------------------- */
+#gps-priority-pager.table-pager { padding-top: 8px; }
+
+/* ------ Status Indikator EAB (Environment-Adjusted Baseline) --------- */
+.vhms-intel-eab-badge {
+  font-size: 11.5px;
+  padding: 4px 10px;
+  border-radius: 4px;
+  background: rgba(15, 23, 42, 0.7);
+  border: 1px solid rgba(51, 65, 85, 0.8);
+  color: #94a3b8;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+.vhms-intel-eab-badge strong {
+  color: #38bdf8;
+}
+
